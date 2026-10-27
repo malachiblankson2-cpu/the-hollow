@@ -426,26 +426,40 @@ pcall(function()
 	store = DataStoreService:GetDataStore("HollowStats_v1")
 end)
 
+-- Only players whose saved data loaded get saved, so a failed load never overwrites
+-- real progress with zeros.
+local statsLoaded: { [Player]: boolean } = {}
+
 local function loadStats(player, escapes)
 	if not store then
 		return
 	end
-	local ok, value = pcall(function()
-		return store:GetAsync("escapes_" .. player.UserId)
+	local ok, value, revives = pcall(function()
+		return store:GetAsync("escapes_" .. player.UserId), store:GetAsync("revives_" .. player.UserId)
 	end)
-	if ok and typeof(value) == "number" then
+	if not ok or not player.Parent then
+		return
+	end
+	if typeof(value) == "number" then
 		escapes.Value = value
 	end
+	-- Revives are paid for, so unused ones carry over between sessions
+	if typeof(revives) == "number" then
+		reviveTokens[player] = (reviveTokens[player] or 0) + revives
+	end
+	statsLoaded[player] = true
 end
 
 local function saveStats(player)
 	local stats = player:FindFirstChild("leaderstats")
-	if not store or not stats then
+	if not store or not stats or not statsLoaded[player] then
 		return
 	end
 	local escapes = stats:FindFirstChild("Escapes")
+	local revives = reviveTokens[player] or 0
 	pcall(function()
 		store:SetAsync("escapes_" .. player.UserId, escapes.Value)
+		store:SetAsync("revives_" .. player.UserId, revives)
 	end)
 end
 
@@ -453,6 +467,7 @@ local function addEscape(player)
 	local stats = player:FindFirstChild("leaderstats")
 	if stats then
 		stats.Escapes.Value += 1
+		task.spawn(saveStats, player)
 	end
 end
 
@@ -573,6 +588,7 @@ Players.PlayerRemoving:Connect(function(player)
 	saveStats(player)
 	status[player] = nil
 	reviveTokens[player] = nil
+	statsLoaded[player] = nil
 end)
 
 game:BindToClose(function()
@@ -853,6 +869,7 @@ local function applyRevive(player)
 		player:LoadCharacter()
 	else
 		reviveTokens[player] = (reviveTokens[player] or 0) + 1
+		task.spawn(saveStats, player)
 		notify(player, "Revive saved. You'll come back automatically next time you're caught.", Color3.fromRGB(120, 255, 120))
 	end
 end

@@ -109,7 +109,7 @@ end
 -- Growl that comes from the monster itself, so you can hear which way it is
 local function attachGrowl(monster)
 	local head = monster:WaitForChild("Head", 5)
-	if not head or not sounds.Growl then
+	if not head or not sounds.Growl or head:FindFirstChild("Growl") then
 		return
 	end
 	local growl = sounds.Growl:Clone()
@@ -318,7 +318,8 @@ end
 
 local shop = make("Frame", {
 	AnchorPoint = Vector2.new(1, 1),
-	Position = UDim2.new(1, -16, 1, -16),
+	-- On phones the jump button sits bottom-right, so the shop goes above it
+	Position = UserInputService.TouchEnabled and UDim2.new(1, -16, 1, -200) or UDim2.new(1, -16, 1, -16),
 	Size = UDim2.fromOffset(180, 0),
 	AutomaticSize = Enum.AutomaticSize.Y,
 	BackgroundTransparency = 1,
@@ -348,12 +349,32 @@ local function shopButton(text, color, order, onClick)
 	return b
 end
 
+-- Prices come from the Roblox website, so they're always the real ones
+local prices = {} -- shop name -> " · R$ 25"
+local function label(name, text)
+	return (text or Config.ShopText[name] or name) .. (prices[name] or "")
+end
+local function fetchPrice(name, id, infoType, button)
+	task.spawn(function()
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(id, infoType)
+		end)
+		if ok and info and info.PriceInRobux then
+			prices[name] = "  ·  R$ " .. info.PriceInRobux
+			if button.Text == (Config.ShopText[name] or name) then
+				button.Text = label(name)
+			end
+		end
+	end)
+end
+
 local passButtons = {}
 for name, id in pairs(Config.GamePasses) do
 	if id > 0 then
 		passButtons[name] = shopButton(Config.ShopText[name] or name, Color3.fromRGB(90, 60, 160), 1, function()
 			MarketplaceService:PromptGamePassPurchase(player, id)
 		end)
+		fetchPrice(name, id, Enum.InfoType.GamePass, passButtons[name])
 	end
 end
 
@@ -362,11 +383,13 @@ if Config.Products.Revive > 0 then
 	reviveButton = shopButton(Config.ShopText.Revive, Color3.fromRGB(30, 140, 70), 3, function()
 		MarketplaceService:PromptProductPurchase(player, Config.Products.Revive)
 	end)
+	fetchPrice("Revive", Config.Products.Revive, Enum.InfoType.Product, reviveButton)
 end
 if Config.Products.StunMonster > 0 then
 	stunButton = shopButton(Config.ShopText.StunMonster, Color3.fromRGB(40, 110, 180), 2, function()
 		MarketplaceService:PromptProductPurchase(player, Config.Products.StunMonster)
 	end)
+	fetchPrice("StunMonster", Config.Products.StunMonster, Enum.InfoType.Product, stunButton)
 end
 
 local function refreshShop()
@@ -379,7 +402,7 @@ local function refreshShop()
 		local dead = inRound and player:GetAttribute("Status") == "Dead"
 		reviveButton.Visible = dead
 		reviveButton.Size = dead and UDim2.fromOffset(180, 54) or UDim2.fromOffset(180, 38)
-		reviveButton.Text = dead and "REVIVE NOW" or Config.ShopText.Revive
+		reviveButton.Text = dead and label("Revive", "REVIVE NOW") or label("Revive")
 	end
 	if stunButton then
 		stunButton.Visible = inRound
@@ -463,11 +486,19 @@ if UserInputService.TouchEnabled then
 		ZIndex = 6,
 	}, gui)
 	make("UICorner", { CornerRadius = UDim.new(1, 0) }, run)
-	run.MouseButton1Down:Connect(function()
-		wantsSprint = true
+	local sprintTouch = nil
+	run.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch then
+			sprintTouch = input
+			wantsSprint = true
+		end
 	end)
-	run.MouseButton1Up:Connect(function()
-		wantsSprint = false
+	-- Fires even if the finger slides off the button, so sprint never gets stuck on
+	UserInputService.TouchEnded:Connect(function(input)
+		if input == sprintTouch then
+			sprintTouch = nil
+			wantsSprint = false
+		end
 	end)
 	local light = make("TextButton", {
 		AnchorPoint = Vector2.new(1, 1),

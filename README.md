@@ -44,6 +44,8 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
    ```
 4. Publish again. Items left at `0` stay hidden, so the game works even before you set them up.
 
+The shop buttons show each item's real price (for example `Revive · R$ 25`), taken from what you set on the website. Change a price there and the game updates by itself. Revives a player has bought but not used are saved and carry over to their next session.
+
 **How the money works:** players pay in Robux. You keep about 70% of a sale, minus a small fee. To turn Robux into real money (DevEx), you need to be 13 or older and have a verified email. You also need at least 30,000 earned Robux, and your account has to be in good standing.
 
 ## 4. Sound
