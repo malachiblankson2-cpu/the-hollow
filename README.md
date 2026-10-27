@@ -7,7 +7,7 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
 - **A new maze every round**, built with random generation and some extra loops so players can escape the monster
 - **The monster**: a tall black figure with glowing red eyes. It always knows roughly where you are and walks toward you. When it can see you, it runs.
 - **First-person camera, a flashlight (F), and sprinting (Shift) with a stamina bar.** Phones get on-screen buttons.
-- **Jumpscare**: a face fills the screen with shaking and red flashes
+- **Jumpscare**: a face fills the screen with shaking, red flashes and a scream\n- **Sound design**: drone, heartbeat, directional growls, whispers and distant screams
 - **Danger effects**: the screen turns red and shakes as the monster gets closer
 - **Leaderboard**: an "Escapes" count, saved between sessions
 - **Shop**, with 4 ways to charge players:
@@ -45,12 +45,21 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
 
 **How the money works:** players pay in Robux. You keep about 70% of a sale, minus a small fee. To turn Robux into real money (DevEx), you need to be 13 or older and have a verified email. You also need at least 30,000 earned Robux, and your account has to be in good standing.
 
-## 4. Add sound (recommended)
+## 4. Sound
 
-Sound makes a huge difference in horror. In Studio, open the **Toolbox > Audio** tab. Find a jumpscare scream, an ambient drone and a pickup sound. Right-click each one, choose **Copy Asset ID**, then paste the IDs into Config:
+The game already includes a full horror soundscape:
+
+- A low **ambient drone** that never stops, with stone-corridor echo on everything
+- A **heartbeat** that gets louder and faster as the monster gets closer
+- **Growls that come from the monster itself**, so you can hear which direction it is
+- **Whispers** when it's right behind you
+- **Distant screams** from random directions while you're in the maze
+- A scream when it wakes up and when the last key is found, plus a chime for each key
+- A **jumpscare scream** when it catches you
+
+Each sound has backup IDs in `Config.Sounds`, and the game uses the first one that loads. Roblox removes uploads over time, so test once in Studio. If a sound is silent, the **Output** window prints `No working sound for 'Heartbeat'` (or whichever sound it is). To fix it, open **Toolbox > Audio** and find a sound you like. Right-click it, choose **Copy Asset ID**, and put it first in that sound's list:
 ```lua
-Config.JUMPSCARE_SOUND_ID = "rbxassetid://..."
-Config.AMBIENT_SOUND_ID = "rbxassetid://..."
+Heartbeat = { "rbxassetid://YOUR_ID", "rbxassetid://9082241193" },
 ```
 
 ## Tuning

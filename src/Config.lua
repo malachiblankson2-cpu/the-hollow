@@ -35,10 +35,18 @@ Config.MONSTER_CHASE_SPEED = 17 -- when it has line of sight
 Config.MONSTER_SIGHT = 60
 Config.MONSTER_KILL_RANGE = 4.5
 
--- Sounds: paste "rbxassetid://123456" IDs from the Creator Store, or leave "" for none
-Config.JUMPSCARE_SOUND_ID = ""
-Config.AMBIENT_SOUND_ID = ""
-Config.KEY_SOUND_ID = ""
+-- Sounds: each slot lists IDs to try in order. The first one that loads gets used,
+-- so if Roblox removes one the game falls back to the next. If a slot stays silent,
+-- the Output window says which one: put a working ID from the Creator Store at the front.
+Config.Sounds = {
+	Jumpscare = { "rbxassetid://6754147732", "rbxassetid://6349647514", "rbxassetid://194068083" },
+	Ambient = { "rbxassetid://140704980462451", "rbxassetid://139765110669684", "rbxassetid://139743346356072" },
+	Heartbeat = { "rbxassetid://9082241193", "rbxassetid://9204476603" },
+	Growl = { "rbxassetid://276691872" },
+	Whisper = { "rbxassetid://9001132274", "rbxassetid://8873346609" },
+	Stinger = { "rbxassetid://160442088", "rbxassetid://150829983", "rbxassetid://6899144196" },
+	Key = { "rbxasset://sounds/electronicpingshort.wav" },
+}
 
 -- MONETIZATION -------------------------------------------------------------
 -- Create these on create.roblox.com (see README), then paste the numeric IDs.

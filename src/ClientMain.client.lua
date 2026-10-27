@@ -8,6 +8,8 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local SoundService = game:GetService("SoundService")
+local ContentProvider = game:GetService("ContentProvider")
+local Debris = game:GetService("Debris")
 
 local player = Players.LocalPlayer
 local Config = require(ReplicatedStorage:WaitForChild("Config"))
@@ -33,6 +35,159 @@ local function sound(id, props)
 	end
 	return s
 end
+
+---------------------------------------------------------------------------
+-- Sound design
+---------------------------------------------------------------------------
+
+-- Everything echoes like it's bouncing down concrete halls
+SoundService.AmbientReverb = Enum.ReverbType.StoneCorridor
+
+local sounds = {} -- slot name -> Sound, only for slots that loaded
+
+local function loadSlot(slot, props)
+	for _, id in ipairs(Config.Sounds[slot] or {}) do
+		local s = sound(id, props)
+		local loaded = false
+		pcall(function()
+			ContentProvider:PreloadAsync({ s }, function(_, status)
+				loaded = status == Enum.AssetFetchStatus.Success
+			end)
+		end)
+		if loaded then
+			s.Name = slot
+			sounds[slot] = s
+			return s
+		end
+		s:Destroy()
+	end
+	warn("[The Hollow] No working sound for '" .. slot .. "'. Put a new ID first in Config.Sounds." .. slot)
+	return nil
+end
+
+local function play(slot, props)
+	local s = sounds[slot]
+	if not s then
+		return
+	end
+	for k, v in pairs(props or {}) do
+		s[k] = v
+	end
+	s:Play()
+end
+
+-- Plays a copy of a sound from a point in the world, so it comes from a direction
+local function playAt(slot, position, props)
+	local template = sounds[slot]
+	if not template then
+		return
+	end
+	local emitter = make("Part", {
+		Anchored = true,
+		CanCollide = false,
+		CanQuery = false,
+		CanTouch = false,
+		Transparency = 1,
+		Size = Vector3.new(0.2, 0.2, 0.2),
+		Position = position,
+	}, workspace)
+	local s = template:Clone()
+	s.RollOffMinDistance = 10
+	s.RollOffMaxDistance = 120
+	for k, v in pairs(props or {}) do
+		s[k] = v
+	end
+	s.Parent = emitter
+	s:Play()
+	Debris:AddItem(emitter, 12)
+end
+
+local function inMaze()
+	return ReplicatedStorage:GetAttribute("State") == "Round" and player:GetAttribute("Status") == "Alive"
+end
+
+-- Growl that comes from the monster itself, so you can hear which way it is
+local function attachGrowl(monster)
+	local head = monster:WaitForChild("Head", 5)
+	if not head or not sounds.Growl then
+		return
+	end
+	local growl = sounds.Growl:Clone()
+	growl.RollOffMinDistance = 8
+	growl.RollOffMaxDistance = 90
+	growl.Parent = head
+	task.spawn(function()
+		while monster.Parent do
+			task.wait(math.random(40, 90) / 10)
+			if monster.Parent then
+				growl.PlaybackSpeed = math.random(75, 95) / 100
+				growl:Play()
+			end
+		end
+	end)
+end
+
+task.spawn(function()
+	loadSlot("Jumpscare", { Volume = 1 })
+	loadSlot("Key", { Volume = 0.6 })
+	loadSlot("Stinger", { Volume = 0.6 })
+	loadSlot("Whisper", { Volume = 0.7 })
+	loadSlot("Growl", { Volume = 1 })
+	local ambient = loadSlot("Ambient", { Looped = true, Volume = 0.35 })
+	if ambient then
+		ambient:Play()
+	end
+	local heartbeat = loadSlot("Heartbeat", { Looped = true, Volume = 0 })
+	if heartbeat then
+		heartbeat:Play()
+	end
+
+	local existing = workspace:FindFirstChild("Monster")
+	if existing then
+		attachGrowl(existing)
+	end
+end)
+
+workspace.ChildAdded:Connect(function(child)
+	if child.Name == "Monster" then
+		attachGrowl(child)
+		-- It's awake
+		task.delay(Config.MONSTER_WAKE_DELAY, function()
+			if child.Parent and inMaze() then
+				play("Stinger", { Volume = 0.7, PlaybackSpeed = 0.7 })
+			end
+		end)
+	end
+end)
+
+-- Key pickups chime; the last key sets off a scream somewhere in the dark
+local lastKeys = 0
+ReplicatedStorage:GetAttributeChangedSignal("KeysFound"):Connect(function()
+	local keys = ReplicatedStorage:GetAttribute("KeysFound") or 0
+	if keys > lastKeys then
+		play("Key")
+		if keys >= (ReplicatedStorage:GetAttribute("KeysNeeded") or math.huge) then
+			play("Stinger", { Volume = 0.9, PlaybackSpeed = 0.85 })
+		end
+	end
+	lastKeys = keys
+end)
+
+-- Random distant screams while you're in the maze
+task.spawn(function()
+	while true do
+		task.wait(math.random(20, 50))
+		local char = player.Character
+		local hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp and inMaze() then
+			local angle = math.random() * math.pi * 2
+			local offset = Vector3.new(math.cos(angle), 0, math.sin(angle)) * math.random(35, 60)
+			playAt("Stinger", hrp.Position + offset, { Volume = 0.45, PlaybackSpeed = math.random(70, 100) / 100 })
+		end
+	end
+end)
+
+local lastWhisper = 0
 
 ---------------------------------------------------------------------------
 -- HUD
@@ -334,7 +489,6 @@ end
 -- Jumpscare
 ---------------------------------------------------------------------------
 
-local scareSound = sound(Config.JUMPSCARE_SOUND_ID, { Volume = 1 })
 local scaring = false
 
 local function jumpscare()
@@ -342,9 +496,7 @@ local function jumpscare()
 		return
 	end
 	scaring = true
-	if scareSound then
-		scareSound:Play()
-	end
+	play("Jumpscare")
 
 	local layer = make("Frame", {
 		Size = UDim2.fromScale(1, 1),
@@ -426,15 +578,6 @@ end
 remotes:WaitForChild("Jumpscare").OnClientEvent:Connect(jumpscare)
 
 ---------------------------------------------------------------------------
--- Ambient sound
----------------------------------------------------------------------------
-
-local ambient = sound(Config.AMBIENT_SOUND_ID, { Looped = true, Volume = 0.5 })
-if ambient then
-	ambient:Play()
-end
-
----------------------------------------------------------------------------
 -- Per-frame: flashlight follow, sprint, monster proximity
 ---------------------------------------------------------------------------
 
@@ -468,6 +611,17 @@ RunService:BindToRenderStep("HorrorEffects", Enum.RenderPriority.Camera.Value + 
 		intensity = math.clamp(1 - d / 45, 0, 1)
 	end
 	danger.BackgroundTransparency = 1 - 0.35 * intensity
+
+	-- Heartbeat gets louder and faster as it closes in; whispers when it's very close
+	local heartbeat = sounds.Heartbeat
+	if heartbeat then
+		heartbeat.Volume = intensity * 0.9
+		heartbeat.PlaybackSpeed = 0.9 + intensity * 0.6
+	end
+	if intensity > 0.55 and os.clock() - lastWhisper > 12 then
+		lastWhisper = os.clock()
+		play("Whisper")
+	end
 	if intensity > 0 then
 		local s = 0.006 * intensity
 		camera.CFrame *= CFrame.Angles((math.random() - 0.5) * s, (math.random() - 0.5) * s, 0)
