@@ -249,6 +249,65 @@ if (scene === "icon") {
   title(W / 2, H * .93, W * .2);
 }
 
+// ---------- shop item icons (512x512, kept inside a circle: Roblox crops passes round) ----------
+function itemBg(inner, outer) {
+  defs += `<radialGradient id="ibg" cx=".5" cy=".45" r=".65"><stop offset="0" stop-color="${inner}"/><stop offset=".75" stop-color="${outer}"/><stop offset="1" stop-color="#000"/></radialGradient>`;
+  add(`<rect width="${W}" height="${H}" fill="url(#ibg)"/>`);
+}
+const C = W / 2;
+
+if (scene === "flashlight") {
+  itemBg("#3b2a6e", "#0d0820");
+  defs += `<linearGradient id="beam" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#fff6dc" stop-opacity=".95"/><stop offset="1" stop-color="#fff6dc" stop-opacity="0"/></linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8a8a96"/><stop offset=".45" stop-color="#3a3a44"/><stop offset="1" stop-color="#15151a"/></linearGradient>`;
+  add(`<g transform="rotate(-40 ${C} ${C})">
+    <polygon points="${C + 40},${C - 38} ${C + 260},${C - 170} ${C + 260},${C + 170} ${C + 40},${C + 38}" fill="url(#beam)" filter="url(#blur3)"/>
+    <rect x="${C - 190}" y="${C - 30}" width="190" height="60" rx="14" fill="url(#metal)"/>
+    <rect x="${C - 150}" y="${C - 30}" width="14" height="60" fill="#1c1c22"/><rect x="${C - 120}" y="${C - 30}" width="14" height="60" fill="#1c1c22"/>
+    <path d="M${C} ${C - 30} L${C + 46} ${C - 50} L${C + 46} ${C + 50} L${C} ${C + 30} Z" fill="url(#metal)"/>
+    <ellipse cx="${C + 46}" cy="${C}" rx="12" ry="50" fill="#fffbe8" filter="url(#glow)"/>
+    <rect x="${C - 80}" y="${C - 40}" width="34" height="14" rx="4" fill="#b98cff"/></g>`);
+  for (const [x, y, r] of [[C + 120, C - 150, 16], [C + 170, C - 60, 10], [C + 40, C - 190, 9]]) {
+    add(`<path d="M${x} ${y - r * 2} L${x + r * .5} ${y - r * .5} L${x + r * 2} ${y} L${x + r * .5} ${y + r * .5} L${x} ${y + r * 2} L${x - r * .5} ${y + r * .5} L${x - r * 2} ${y} L${x - r * .5} ${y - r * .5} Z" fill="#fff" filter="url(#glow)"/>`);
+  }
+}
+
+if (scene === "stamina") {
+  itemBg("#4a2a7a", "#100820");
+  add(`<path d="M${C} ${C} C ${C - 60} ${C - 110}, ${C - 200} ${C - 110}, ${C - 200} ${C} C ${C - 200} ${C + 110}, ${C - 60} ${C + 110}, ${C} ${C} C ${C + 60} ${C - 110}, ${C + 200} ${C - 110}, ${C + 200} ${C} C ${C + 200} ${C + 110}, ${C + 60} ${C + 110}, ${C} ${C} Z"
+    fill="none" stroke="#b98cff" stroke-width="34" stroke-linejoin="round" filter="url(#glow)"/>`);
+  add(`<path d="M${C + 30} ${C - 170} L${C - 70} ${C + 15} L${C - 5} ${C + 15} L${C - 35} ${C + 170} L${C + 75} ${C - 30} L${C + 10} ${C - 30} Z"
+    fill="#ffd84a" stroke="#3a2200" stroke-width="10" stroke-linejoin="round" filter="url(#glow)"/>`);
+}
+
+if (scene === "revive") {
+  itemBg("#0f5a2e", "#03140a");
+  const heart = `M${C} ${C + 150} C ${C - 40} ${C + 110}, ${C - 190} ${C + 20}, ${C - 190} ${C - 60} C ${C - 190} ${C - 150}, ${C - 80} ${C - 175}, ${C} ${C - 95} C ${C + 80} ${C - 175}, ${C + 190} ${C - 150}, ${C + 190} ${C - 60} C ${C + 190} ${C + 20}, ${C + 40} ${C + 110}, ${C} ${C + 150} Z`;
+  defs += `<linearGradient id="hg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7dffb0"/><stop offset="1" stop-color="#14a050"/></linearGradient>`;
+  add(`<path d="${heart}" fill="#00ff78" opacity=".35" filter="url(#bigglow)"/>`);
+  add(`<path d="${heart}" fill="url(#hg)" stroke="#063a1c" stroke-width="10"/>`);
+  add(`<polyline points="${C - 150},${C - 20} ${C - 70},${C - 20} ${C - 40},${C - 80} ${C},${C + 50} ${C + 35},${C - 40} ${C + 60},${C - 20} ${C + 150},${C - 20}"
+    fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>`);
+}
+
+if (scene === "freeze") {
+  itemBg("#0f3a6a", "#020a18");
+  monster(C - 10, C + 160, 330, { halo: "#ff1a1a" });
+  // ice block over the monster
+  add(`<g opacity=".85">
+    <polygon points="${C - 170},${C - 150} ${C + 150},${C - 180} ${C + 190},${C + 140} ${C - 150},${C + 180}" fill="#9fdcff" opacity=".45"/>
+    <polygon points="${C - 170},${C - 150} ${C - 60},${C - 165} ${C - 110},${C + 170} ${C - 150},${C + 180}" fill="#d8f2ff" opacity=".35"/>
+    <polyline points="${C - 170},${C - 150} ${C + 150},${C - 180} ${C + 190},${C + 140} ${C - 150},${C + 180} ${C - 170},${C - 150}" fill="none" stroke="#e8f8ff" stroke-width="8" stroke-linejoin="round"/>
+    <path d="M${C - 120} ${C - 120} L${C - 60} ${C - 128} M${C + 100} ${C + 60} L${C + 140} ${C + 120} M${C + 40} ${C + 120} L${C + 80} ${C + 70}" stroke="#fff" stroke-width="5" opacity=".8"/></g>`);
+  // snowflake badge
+  const sx = C + 115, sy = C - 115;
+  add(`<circle cx="${sx}" cy="${sy}" r="62" fill="#0b2a52" stroke="#bfe9ff" stroke-width="6"/>`);
+  for (let a = 0; a < 6; a++) {
+    add(`<g transform="rotate(${a * 60} ${sx} ${sy})" stroke="#e8f8ff" stroke-width="7" stroke-linecap="round">
+      <line x1="${sx}" y1="${sy}" x2="${sx}" y2="${sy - 44}"/><line x1="${sx}" y1="${sy - 26}" x2="${sx - 12}" y2="${sy - 38}"/><line x1="${sx}" y1="${sy - 26}" x2="${sx + 12}" y2="${sy - 38}"/></g>`);
+  }
+}
+
 document.body.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><defs>${defs}</defs>${body}</svg>`;
 </script>
 </body></html>

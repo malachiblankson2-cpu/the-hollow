@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const jobs = [["icon",512,512],["title",1920,1080],["keys",1920,1080],["behind",1920,1080],["gate",1920,1080],["jumpscare",1920,1080]];
+const jobs = [["icon",512,512],["title",1920,1080],["keys",1920,1080],["behind",1920,1080],["gate",1920,1080],["jumpscare",1920,1080],["flashlight",512,512],["stamina",512,512],["revive",512,512],["freeze",512,512]];
 (async () => {
   const b = await chromium.launch();
   for (const [s,w,h] of jobs) {
