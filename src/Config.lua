@@ -53,13 +53,13 @@ Config.Sounds = {
 -- Anything left at 0 is hidden from the shop, so the game works before you set them up.
 
 Config.GamePasses = {
-	SuperFlashlight = 0, -- one-time purchase: brighter, wider, longer flashlight
-	InfiniteStamina = 0, -- one-time purchase: sprint forever
+	SuperFlashlight = 2058532921, -- one-time purchase: brighter, wider, longer flashlight
+	InfiniteStamina = 2058502914, -- one-time purchase: sprint forever
 }
 
 Config.Products = {
-	Revive = 0,      -- repeatable: come back to life mid-round
-	StunMonster = 0, -- repeatable: freeze the monster for everyone
+	Revive = 3722997829,      -- repeatable: come back to life mid-round
+	StunMonster = 3722997944, -- repeatable: freeze the monster for everyone
 }
 
 Config.STUN_DURATION = 10
