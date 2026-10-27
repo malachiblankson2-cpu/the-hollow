@@ -7,7 +7,8 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
 - **A new maze every round**, built with random generation and some extra loops so players can escape the monster
 - **The monster**: a tall black figure with glowing red eyes. It always knows roughly where you are and walks toward you. When it can see you, it runs.
 - **First-person camera, a flashlight (F), and sprinting (Shift) with a stamina bar.** Phones get on-screen buttons.
-- **Jumpscare**: a face fills the screen with shaking, red flashes and a scream\n- **Sound design**: drone, heartbeat, directional growls, whispers and distant screams
+- **Jumpscare**: a face fills the screen with shaking, red flashes and a scream
+- **Sound design**: drone, heartbeat, directional growls, whispers and distant screams
 - **Danger effects**: the screen turns red and shakes as the monster gets closer
 - **Leaderboard**: an "Escapes" count, saved between sessions
 - **Shop**, with 4 ways to charge players:
