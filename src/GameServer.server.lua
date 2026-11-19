@@ -8,6 +8,8 @@ local RunService = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local DataStoreService = game:GetService("DataStoreService")
+local BadgeService = game:GetService("BadgeService")
+local AnalyticsService = game:GetService("AnalyticsService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Config"))
 
@@ -46,9 +48,10 @@ setShared("State", "Waiting")
 setShared("TimeLeft", 0)
 setShared("KeysFound", 0)
 setShared("KeysNeeded", Config.KEYS_TO_ESCAPE)
+setShared("ReviveWindow", 0)
 
 ---------------------------------------------------------------------------
--- Lighting: pitch dark, heavy fog
+-- Lighting: very dark, thick air
 ---------------------------------------------------------------------------
 
 for _, child in ipairs(Lighting:GetChildren()) do
@@ -59,18 +62,25 @@ end
 
 Lighting.ClockTime = 0
 Lighting.Brightness = 0
-Lighting.Ambient = Color3.fromRGB(8, 8, 12)
-Lighting.OutdoorAmbient = Color3.fromRGB(8, 8, 12)
+Lighting.Ambient = Config.AMBIENT
+Lighting.OutdoorAmbient = Config.AMBIENT
 Lighting.EnvironmentDiffuseScale = 0
 Lighting.EnvironmentSpecularScale = 0
 Lighting.GlobalShadows = true
-Lighting.FogColor = Color3.new(0, 0, 0)
-Lighting.FogStart = 0
-Lighting.FogEnd = Config.FOG_DISTANCE
+
+-- Atmosphere replaces fog: you can see what's near, the distance just fades to black
+local atmosphere = Instance.new("Atmosphere")
+atmosphere.Density = Config.ATMOSPHERE_DENSITY
+atmosphere.Offset = 0
+atmosphere.Color = Color3.fromRGB(18, 18, 22)
+atmosphere.Decay = Color3.fromRGB(8, 8, 10)
+atmosphere.Glare = 0
+atmosphere.Haze = 1.5
+atmosphere.Parent = Lighting
 
 local grade = Instance.new("ColorCorrectionEffect")
-grade.Saturation = -0.45
-grade.Contrast = 0.15
+grade.Saturation = -0.3
+grade.Contrast = 0.05
 grade.TintColor = Color3.fromRGB(215, 225, 255)
 grade.Parent = Lighting
 
@@ -95,6 +105,8 @@ end
 ---------------------------------------------------------------------------
 
 local LOBBY_CENTER = Vector3.new(Config.MAZE_WIDTH * Config.CELL_SIZE / 2, 0, -90)
+local LOBBY_SPAWN = CFrame.new(LOBBY_CENTER + Vector3.new(0, 3, 0))
+local escapeBoard: TextLabel? = nil -- the top escapes board in the lobby, filled in below
 
 local function buildLobby()
 	local lobby = Instance.new("Folder")
@@ -152,9 +164,14 @@ local function buildLobby()
 	spawn.Duration = 0
 	spawn.Size = Vector3.new(8, 1, 8)
 	spawn.Position = LOBBY_CENTER + Vector3.new(0, 0.1, 0)
-	spawn.Color = Color3.fromRGB(40, 30, 30)
+	spawn.Color = Color3.fromRGB(90, 22, 22)
 	spawn.Material = Enum.Material.Slate
 	spawn.Parent = lobby
+	local padGlow = Instance.new("PointLight")
+	padGlow.Color = Color3.fromRGB(255, 40, 30)
+	padGlow.Range = 10
+	padGlow.Brightness = 0.8
+	padGlow.Parent = spawn
 
 	-- Sign on the wall explaining the game
 	local sign = makePart({
@@ -179,6 +196,89 @@ local function buildLobby()
 	label.Parent = gui
 	-- The sign faces into the room
 	sign.CFrame = CFrame.lookAt(sign.Position, LOBBY_CENTER + Vector3.new(0, 8, 0))
+
+	-- Top escapes board on the opposite wall
+	local board = makePart({
+		Name = "TopEscapes",
+		Size = Vector3.new(16, 11, 0.5),
+		Position = LOBBY_CENTER + Vector3.new(0, 8, -size / 2 + 1),
+		Color = Color3.fromRGB(15, 10, 10),
+	}, lobby)
+	board.CFrame = CFrame.lookAt(board.Position, LOBBY_CENTER + Vector3.new(0, 8, 0))
+	local boardGui = Instance.new("SurfaceGui")
+	boardGui.Face = Enum.NormalId.Front
+	boardGui.Parent = board
+	local boardText = Instance.new("TextLabel")
+	boardText.Size = UDim2.fromScale(1, 1)
+	boardText.BackgroundTransparency = 1
+	boardText.TextScaled = true
+	boardText.RichText = true
+	boardText.Font = Enum.Font.GothamBold
+	boardText.TextColor3 = Color3.fromRGB(225, 225, 225)
+	boardText.Text = '<font face="Creepster" color="#dc1e1e">TOP ESCAPES</font>'
+	boardText.Parent = boardGui
+	escapeBoard = boardText
+
+	-- Shop kiosks along the east wall: walk up and press E to buy
+	local items = {}
+	for name, id in pairs(Config.GamePasses) do
+		if id > 0 then
+			table.insert(items, { name = name, id = id, pass = true })
+		end
+	end
+	for name, id in pairs(Config.Products) do
+		if id > 0 then
+			table.insert(items, { name = name, id = id, pass = false })
+		end
+	end
+	table.sort(items, function(a, b)
+		return a.name < b.name
+	end)
+	for i, item in ipairs(items) do
+		local title = Config.ShopText[item.name] or item.name
+		local stand = makePart({
+			Name = "Kiosk",
+			Size = Vector3.new(3, 4, 3),
+			Position = LOBBY_CENTER + Vector3.new(size / 2 - 4, 2, (i - (#items + 1) / 2) * 9),
+			Material = Enum.Material.Slate,
+			Color = Color3.fromRGB(25, 20, 20),
+		}, lobby)
+		makePart({
+			Name = "KioskGlow",
+			Size = Vector3.new(3.2, 0.3, 3.2),
+			Position = stand.Position + Vector3.new(0, 2.15, 0),
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(150, 15, 15),
+			CanCollide = false,
+		}, lobby)
+		local tag = Instance.new("BillboardGui")
+		tag.Size = UDim2.fromOffset(200, 40)
+		tag.StudsOffset = Vector3.new(0, 4.5, 0)
+		tag.MaxDistance = 45
+		tag.Parent = stand
+		local tagText = Instance.new("TextLabel")
+		tagText.Size = UDim2.fromScale(1, 1)
+		tagText.BackgroundTransparency = 1
+		tagText.Font = Enum.Font.GothamBold
+		tagText.TextSize = 20
+		tagText.TextColor3 = Color3.new(1, 1, 1)
+		tagText.TextStrokeTransparency = 0.3
+		tagText.Text = title
+		tagText.Parent = tag
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = title
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = stand
+		prompt.Triggered:Connect(function(player)
+			if item.pass then
+				MarketplaceService:PromptGamePassPurchase(player, item.id)
+			else
+				MarketplaceService:PromptProductPurchase(player, item.id)
+			end
+		end)
+	end
 end
 
 buildLobby()
@@ -260,8 +360,8 @@ local function wallPart(parent, position, size)
 		Name = "Wall",
 		Size = size,
 		Position = position,
-		Material = Enum.Material.Concrete,
-		Color = Color3.fromRGB(55, 55, 60),
+		Material = Enum.Material.Brick,
+		Color = Color3.fromRGB(120, 118, 115),
 	}, parent)
 end
 
@@ -297,7 +397,7 @@ local function buildMaze()
 		Size = Vector3.new(W * CELL + WALL_T, 1, H * CELL + WALL_T),
 		Position = Vector3.new(W * CELL / 2, -0.5, H * CELL / 2),
 		Material = Enum.Material.Slate,
-		Color = Color3.fromRGB(35, 33, 33),
+		Color = Color3.fromRGB(60, 57, 55),
 	}, mazeFolder)
 
 	local yMid = Config.WALL_HEIGHT / 2
@@ -368,17 +468,25 @@ local function buildMaze()
 			local key = makePart({
 				Name = "Key",
 				Shape = Enum.PartType.Ball,
-				Size = Vector3.new(1.5, 1.5, 1.5),
+				Size = Vector3.new(2, 2, 2),
 				Position = cellCenter(x, y) + Vector3.new(0, 2.5, 0),
 				Material = Enum.Material.Neon,
 				Color = Color3.fromRGB(255, 200, 40),
 				CanCollide = false,
 			}, mazeFolder)
 			local glow = Instance.new("PointLight")
-			glow.Range = 10
-			glow.Brightness = 2
-			glow.Color = Color3.fromRGB(255, 200, 40)
+			glow.Range = 12
+			glow.Brightness = 2.5
+			glow.Color = Color3.fromRGB(255, 190, 70)
 			glow.Parent = key
+			-- Outline shows through the dark, but not through walls
+			local outline = Instance.new("Highlight")
+			outline.DepthMode = Enum.HighlightDepthMode.Occluded
+			outline.FillColor = Color3.fromRGB(255, 200, 60)
+			outline.FillTransparency = 0.6
+			outline.OutlineColor = Color3.fromRGB(255, 230, 140)
+			outline.OutlineTransparency = 0
+			outline.Parent = key
 			key.Touched:Connect(function(hit)
 				onKeyTouched(key, hit)
 			end)
@@ -397,8 +505,8 @@ local function buildMaze()
 			CanCollide = false,
 		}, mazeFolder)
 		local light = Instance.new("PointLight")
-		light.Range = 16
-		light.Brightness = 0.8
+		light.Range = 24
+		light.Brightness = 1.2
 		light.Color = Color3.fromRGB(255, 140, 80)
 		light.Parent = lamp
 		startFlicker(lamp, light, rng)
@@ -415,15 +523,21 @@ local roundActive = false
 local status: { [Player]: string } = {} -- "Lobby" | "Alive" | "Dead" | "Escaped"
 local reviveTokens: { [Player]: number } = {}
 local pendingStuns = 0
+local roundStartedAt = 0
+local roundPlayerCount = 0
+local caughtCount: { [Player]: number } = {}
+local fellAt: { [Player]: Vector3 } = {} -- where a revived player comes back
+local protectedUntil: { [Player]: number } = {} -- the monster ignores freshly revived players
 
 local function setStatus(player, s)
 	status[player] = s
 	player:SetAttribute("Status", s)
 end
 
-local store
+local store, escapeRanking
 pcall(function()
 	store = DataStoreService:GetDataStore("HollowStats_v1")
+	escapeRanking = DataStoreService:GetOrderedDataStore("HollowEscapes_v1")
 end)
 
 -- Only players whose saved data loaded get saved, so a failed load never overwrites
@@ -434,8 +548,10 @@ local function loadStats(player, escapes)
 	if not store then
 		return
 	end
-	local ok, value, revives = pcall(function()
-		return store:GetAsync("escapes_" .. player.UserId), store:GetAsync("revives_" .. player.UserId)
+	local ok, value, revives, caught = pcall(function()
+		return store:GetAsync("escapes_" .. player.UserId),
+			store:GetAsync("revives_" .. player.UserId),
+			store:GetAsync("caught_" .. player.UserId)
 	end)
 	if not ok or not player.Parent then
 		return
@@ -446,6 +562,9 @@ local function loadStats(player, escapes)
 	-- Revives are paid for, so unused ones carry over between sessions
 	if typeof(revives) == "number" then
 		reviveTokens[player] = (reviveTokens[player] or 0) + revives
+	end
+	if typeof(caught) == "number" then
+		caughtCount[player] = (caughtCount[player] or 0) + caught
 	end
 	statsLoaded[player] = true
 end
@@ -460,6 +579,31 @@ local function saveStats(player)
 	pcall(function()
 		store:SetAsync("escapes_" .. player.UserId, escapes.Value)
 		store:SetAsync("revives_" .. player.UserId, revives)
+		store:SetAsync("caught_" .. player.UserId, caughtCount[player] or 0)
+		if escapeRanking and escapes.Value > 0 then
+			escapeRanking:SetAsync(tostring(player.UserId), escapes.Value)
+		end
+	end)
+end
+
+local function awardBadge(player, name)
+	local id = Config.Badges[name]
+	if not id or id <= 0 then
+		return
+	end
+	task.spawn(function()
+		pcall(function()
+			if not BadgeService:UserHasBadgeAsync(player.UserId, id) then
+				BadgeService:AwardBadge(player.UserId, id)
+			end
+		end)
+	end)
+end
+
+-- Custom events show up in the Creator Dashboard under Analytics
+local function logEvent(player, name, value)
+	pcall(function()
+		AnalyticsService:LogCustomEvent(player, name, value or 1)
 	end)
 end
 
@@ -467,9 +611,54 @@ local function addEscape(player)
 	local stats = player:FindFirstChild("leaderstats")
 	if stats then
 		stats.Escapes.Value += 1
+		awardBadge(player, "FirstEscape")
+		if stats.Escapes.Value >= 10 then
+			awardBadge(player, "TenEscapes")
+		end
+		if roundPlayerCount == 1 then
+			awardBadge(player, "SoloEscape")
+		end
 		task.spawn(saveStats, player)
 	end
 end
+
+-- Top escapes board in the lobby
+local nameCache: { [number]: string } = {}
+local function refreshEscapeBoard()
+	if not escapeRanking or not escapeBoard then
+		return
+	end
+	local ok, page = pcall(function()
+		return escapeRanking:GetSortedAsync(false, 10):GetCurrentPage()
+	end)
+	if not ok then
+		return
+	end
+	local lines = { '<font face="Creepster" color="#dc1e1e">TOP ESCAPES</font>' }
+	for i, entry in ipairs(page) do
+		local id = tonumber(entry.key)
+		local name = id and nameCache[id]
+		if id and not name then
+			local okName, result = pcall(function()
+				return Players:GetNameFromUserIdAsync(id)
+			end)
+			name = okName and result or "?"
+			nameCache[id] = name
+		end
+		table.insert(lines, i .. ".  " .. (name or "?") .. "   " .. entry.value)
+	end
+	if #page == 0 then
+		table.insert(lines, "Nobody has escaped yet.")
+	end
+	escapeBoard.Text = table.concat(lines, "\n")
+end
+
+task.spawn(function()
+	while true do
+		refreshEscapeBoard()
+		task.wait(60)
+	end
+end)
 
 local function getAliveParts(player)
 	local char = player.Character
@@ -484,14 +673,24 @@ local function getAliveParts(player)
 	return nil
 end
 
-local function aliveCount()
+local function countStatus(wanted)
 	local n = 0
 	for _, s in pairs(status) do
-		if s == "Alive" then
+		if s == wanted then
 			n += 1
 		end
 	end
 	return n
+end
+
+local function isProtected(player)
+	return (protectedUntil[player] or 0) > os.clock()
+end
+
+-- A revived player gets a few seconds before the monster can take them again
+local function protectRevived(player)
+	protectedUntil[player] = os.clock() + Config.REVIVE_PROTECTION
+	notify(player, "You have " .. Config.REVIVE_PROTECTION .. " seconds. RUN.", Color3.fromRGB(120, 255, 120))
 end
 
 ---------------------------------------------------------------------------
@@ -532,9 +731,15 @@ local function onCharacterAdded(player, char)
 	char:WaitForChild("HumanoidRootPart")
 	hum.WalkSpeed = Config.WALK_SPEED
 
+	task.wait()
 	if roundActive and status[player] == "Alive" then
-		task.wait()
-		char:PivotTo(CFrame.new(cellCenter(1, 1) + Vector3.new(0, 3, 0)))
+		-- Round start puts you at the entrance; a revive puts you back where you fell
+		local at = fellAt[player]
+		fellAt[player] = nil
+		char:PivotTo(CFrame.new((at or cellCenter(1, 1)) + Vector3.new(0, 3, 0)))
+	else
+		-- Everyone else goes to the lit lobby, never to wherever the place's default spawn is
+		char:PivotTo(LOBBY_SPAWN)
 	end
 
 	hum.Died:Connect(function()
@@ -542,11 +747,17 @@ local function onCharacterAdded(player, char)
 			return
 		end
 		if roundActive and status[player] == "Alive" then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				fellAt[player] = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
+			end
 			if (reviveTokens[player] or 0) > 0 then
-				-- Pre-bought revive: status stays Alive, they respawn back in the maze
+				-- Pre-bought revive: status stays Alive, they respawn where they fell
 				reviveTokens[player] -= 1
+				protectRevived(player)
 				notifyAll(player.DisplayName .. " used a revive!", Color3.fromRGB(120, 255, 120))
 			else
+				player:SetAttribute("SurvivedFor", math.floor(os.clock() - roundStartedAt))
 				setStatus(player, "Dead")
 				notifyAll(player.DisplayName .. " was taken...", Color3.fromRGB(255, 60, 60))
 			end
@@ -589,6 +800,9 @@ Players.PlayerRemoving:Connect(function(player)
 	status[player] = nil
 	reviveTokens[player] = nil
 	statsLoaded[player] = nil
+	fellAt[player] = nil
+	protectedUntil[player] = nil
+	caughtCount[player] = nil
 end)
 
 game:BindToClose(function()
@@ -609,6 +823,7 @@ type Monster = {
 	speed: number,
 	wakeAt: number,
 	stunnedUntil: number,
+	wanderGoal: Vector3?,
 	catching: { [Player]: boolean },
 }
 
@@ -673,7 +888,7 @@ end
 local function nearestTarget(from: Vector3)
 	local best, bestDist, bestPos = nil, math.huge, nil
 	for player, s in pairs(status) do
-		if s == "Alive" then
+		if s == "Alive" and not isProtected(player) then
 			local hrp = getAliveParts(player)
 			if hrp then
 				local d = (hrp.Position - from).Magnitude
@@ -696,34 +911,60 @@ local function hasLineOfSight(from: Vector3, to: Vector3)
 	return workspace:Raycast(from, to - from, params) == nil
 end
 
+local function computePath(from: Vector3, to: Vector3): { Vector3 }?
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 3,
+		AgentHeight = 10,
+		AgentCanJump = false,
+		WaypointSpacing = 6,
+	})
+	local ok = pcall(function()
+		path:ComputeAsync(Vector3.new(from.X, 2, from.Z), to)
+	end)
+	if not ok or path.Status ~= Enum.PathStatus.Success then
+		return nil
+	end
+	local list = {}
+	for i, wp in ipairs(path:GetWaypoints()) do
+		if i > 1 then
+			table.insert(list, wp.Position)
+		end
+	end
+	return list
+end
+
 local function runMonsterBrain(m: Monster)
 	task.spawn(function()
 		while monster == m and roundActive do
 			local pos = m.root.Position
 			local target, dist, goal = nearestTarget(pos)
-			if target and goal then
-				local sees = dist < Config.MONSTER_SIGHT and hasLineOfSight(pos, goal)
-				m.speed = sees and Config.MONSTER_CHASE_SPEED or Config.MONSTER_HUNT_SPEED
+			-- Early on it searches: slow, wandering, and only notices players who get close
+			local searching = os.clock() < m.wakeAt + Config.MONSTER_SEARCH_TIME
+			local sightRange = searching and Config.MONSTER_SEARCH_SIGHT or Config.MONSTER_SIGHT
+			local sees = target ~= nil and dist < sightRange and hasLineOfSight(pos, goal)
 
-				local path = PathfindingService:CreatePath({
-					AgentRadius = 3,
-					AgentHeight = 10,
-					AgentCanJump = false,
-					WaypointSpacing = 6,
-				})
-				local ok = pcall(function()
-					path:ComputeAsync(Vector3.new(pos.X, 2, pos.Z), goal)
-				end)
+			if searching and not sees then
+				m.speed = Config.MONSTER_SEARCH_SPEED
+				if not m.wanderGoal or m.index > #m.waypoints then
+					m.wanderGoal = cellCenter(math.random(1, W), math.random(1, H)) + Vector3.new(0, 2, 0)
+					local list = computePath(pos, m.wanderGoal)
+					if monster ~= m then
+						break
+					end
+					if list then
+						m.waypoints, m.index = list, 1
+					else
+						m.wanderGoal = nil
+					end
+				end
+			elseif goal then
+				m.wanderGoal = nil
+				m.speed = (sees and not searching) and Config.MONSTER_CHASE_SPEED or Config.MONSTER_HUNT_SPEED
+				local list = computePath(pos, goal)
 				if monster ~= m then
 					break
 				end
-				if ok and path.Status == Enum.PathStatus.Success then
-					local list = {}
-					for i, wp in ipairs(path:GetWaypoints()) do
-						if i > 1 then
-							table.insert(list, wp.Position)
-						end
-					end
+				if list then
 					m.waypoints, m.index = list, 1
 				elseif sees then
 					-- No path but a clear view: lunge straight at them
@@ -737,6 +978,11 @@ end
 
 local function catchPlayer(m: Monster, player: Player, hum: Humanoid)
 	m.catching[player] = true
+	caughtCount[player] = (caughtCount[player] or 0) + 1
+	if caughtCount[player] >= 50 then
+		awardBadge(player, "Caught50")
+	end
+	logEvent(player, "Caught", math.floor(os.clock() - roundStartedAt))
 	hum.WalkSpeed = 0
 	jumpscareEvent:FireClient(player)
 	task.delay(0.7, function()
@@ -778,7 +1024,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 
 	for player, s in pairs(status) do
-		if s == "Alive" and not m.catching[player] then
+		if s == "Alive" and not m.catching[player] and not isProtected(player) then
 			local hrp, hum = getAliveParts(player)
 			if hrp and hum then
 				local flat = Vector3.new(hrp.Position.X - pos.X, 0, hrp.Position.Z - pos.Z)
@@ -809,6 +1055,7 @@ onKeyTouched = function(key, hit)
 	end
 	key:Destroy()
 	keysFound += 1
+	logEvent(player, "KeyFound", keysFound)
 	setShared("KeysFound", keysFound)
 	notifyAll(
 		player.DisplayName .. " found a key (" .. keysFound .. "/" .. Config.KEYS_TO_ESCAPE .. ")",
@@ -841,6 +1088,7 @@ onExitTouched = function(hit)
 	end
 	setStatus(player, "Escaped")
 	addEscape(player)
+	logEvent(player, "Escaped", math.floor(os.clock() - roundStartedAt))
 	notifyAll(player.DisplayName .. " ESCAPED!", Color3.fromRGB(0, 255, 120))
 	player:LoadCharacter()
 end
@@ -850,6 +1098,7 @@ end
 ---------------------------------------------------------------------------
 
 local function applyStun(byPlayer)
+	logEvent(byPlayer, "FreezeBought")
 	if roundActive and monster then
 		monster.stunnedUntil = os.clock() + Config.STUN_DURATION
 		notifyAll(
@@ -863,8 +1112,10 @@ local function applyStun(byPlayer)
 end
 
 local function applyRevive(player)
+	logEvent(player, "ReviveBought")
 	if roundActive and status[player] == "Dead" then
 		setStatus(player, "Alive")
+		protectRevived(player)
 		notifyAll(player.DisplayName .. " came back from the dead!", Color3.fromRGB(120, 255, 120))
 		player:LoadCharacter()
 	else
@@ -908,15 +1159,21 @@ local function startRound()
 	task.wait(1) -- let the navigation mesh catch up with the new walls
 
 	roundActive = true
+	roundStartedAt = os.clock()
+	roundPlayerCount = #Players:GetPlayers()
+	table.clear(fellAt)
+	table.clear(protectedUntil)
 	setShared("State", "Round")
 	for _, player in ipairs(Players:GetPlayers()) do
 		setStatus(player, "Alive")
+		logEvent(player, "RoundStarted", roundPlayerCount)
 		task.spawn(function()
 			player:LoadCharacter()
 		end)
 	end
 
-	local m = buildMonster(cellCenter(W, 1))
+	-- Far side of the maze from the entrance at (1, 1)
+	local m = buildMonster(cellCenter(W, H - 1))
 	monster = m
 	runMonsterBrain(m)
 	if pendingStuns > 0 then
@@ -979,11 +1236,23 @@ while true do
 	if #Players:GetPlayers() >= Config.MIN_PLAYERS then
 		startRound()
 		local t = Config.ROUND_TIME
-		while t > 0 and aliveCount() > 0 do
+		local window = Config.REVIVE_WINDOW
+		while t > 0 do
+			if countStatus("Alive") > 0 then
+				window = Config.REVIVE_WINDOW
+				setShared("ReviveWindow", 0)
+			elseif countStatus("Dead") > 0 and window > 0 then
+				-- Everyone's down: a few seconds to buy a Revive before the round ends
+				setShared("ReviveWindow", window)
+				window -= 1
+			else
+				break
+			end
 			setShared("TimeLeft", t)
 			task.wait(1)
 			t -= 1
 		end
+		setShared("ReviveWindow", 0)
 		endRound(t <= 0)
 		task.wait(2)
 	end

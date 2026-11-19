@@ -17,10 +17,11 @@ Config.MAZE_HEIGHT = 10
 Config.CELL_SIZE = 16           -- studs
 Config.WALL_HEIGHT = 14
 Config.EXTRA_OPENINGS = 0.12    -- chance to knock out extra walls so there are escape loops
-Config.FLICKER_LAMPS = 10
+Config.FLICKER_LAMPS = 18
 
--- Atmosphere
-Config.FOG_DISTANCE = 70
+-- Atmosphere: "can't see far", never "can't see anything"
+Config.AMBIENT = Color3.fromRGB(12, 12, 15) -- wall shapes just readable a few studs away without the flashlight
+Config.ATMOSPHERE_DENSITY = 0.45            -- thick dark air that swallows anything far away
 
 -- Player movement
 Config.WALK_SPEED = 14
@@ -34,6 +35,15 @@ Config.MONSTER_HUNT_SPEED = 9   -- when it can't see you (it always knows roughl
 Config.MONSTER_CHASE_SPEED = 17 -- when it has line of sight
 Config.MONSTER_SIGHT = 60
 Config.MONSTER_KILL_RANGE = 4.5
+-- For the first part of the round it wanders slowly instead of homing in on players,
+-- so there's time to find a key before the first chase.
+Config.MONSTER_SEARCH_TIME = 40 -- seconds after it wakes
+Config.MONSTER_SEARCH_SPEED = 6
+Config.MONSTER_SEARCH_SIGHT = 24 -- only notices you this close while searching
+
+-- Death and revive
+Config.REVIVE_WINDOW = 12       -- when everyone is down, seconds left to buy a Revive before the round ends
+Config.REVIVE_PROTECTION = 5    -- seconds the monster ignores a revived player
 
 -- Sounds: each slot lists IDs to try in order. The first one that loads gets used,
 -- so if Roblox removes one the game falls back to the next. If a slot stays silent,
@@ -46,6 +56,7 @@ Config.Sounds = {
 	Whisper = { "rbxassetid://9001132274", "rbxassetid://8873346609" },
 	Stinger = { "rbxassetid://160442088", "rbxassetid://150829983", "rbxassetid://6899144196" },
 	Key = { "rbxasset://sounds/electronicpingshort.wav" },
+	KeyPulse = { "rbxasset://sounds/electronicpingshort.wav" }, -- each key pings, louder as you get close
 }
 
 -- MONETIZATION -------------------------------------------------------------
@@ -63,6 +74,15 @@ Config.Products = {
 }
 
 Config.STUN_DURATION = 10
+
+-- Badges: create them on create.roblox.com (Engagement > Badges), then paste the IDs.
+-- Anything left at 0 is simply never awarded.
+Config.Badges = {
+	FirstEscape = 0, -- escape once
+	SoloEscape = 0,  -- escape in a round you started alone
+	TenEscapes = 0,  -- 10 escapes in total
+	Caught50 = 0,    -- caught 50 times
+}
 
 -- Shop labels (prices are set on the Roblox website, these are just display text)
 Config.ShopText = {
