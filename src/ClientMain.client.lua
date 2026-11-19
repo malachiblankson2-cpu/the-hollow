@@ -1,5 +1,6 @@
 -- ClientMain (LocalScript in StarterPlayer > StarterPlayerScripts)
--- HUD, flashlight, sprint/stamina, shop, jumpscares and the "it's close" effects.
+-- HUD, flashlight, sprint/stamina, shop, jumpscares, the caught screen, spectating
+-- and the "it's close" effects.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -130,6 +131,7 @@ end
 task.spawn(function()
 	loadSlot("Jumpscare", { Volume = 1 })
 	loadSlot("Key", { Volume = 0.6 })
+	loadSlot("KeyPulse", { Volume = 0.5, PlaybackSpeed = 0.55 })
 	loadSlot("Stinger", { Volume = 0.6 })
 	loadSlot("Whisper", { Volume = 0.7 })
 	loadSlot("Growl", { Volume = 1 })
@@ -173,6 +175,31 @@ ReplicatedStorage:GetAttributeChangedSignal("KeysFound"):Connect(function()
 	lastKeys = keys
 end)
 
+-- Every key pings from where it sits, louder the closer you are: follow the sound to find it
+task.spawn(function()
+	while true do
+		task.wait(1.4)
+		local template = sounds.KeyPulse
+		local maze = workspace:FindFirstChild("Maze")
+		if template and maze and inMaze() then
+			for _, key in ipairs(maze:GetChildren()) do
+				if key.Name == "Key" then
+					local pulse = key:FindFirstChild("Pulse")
+					if not pulse then
+						pulse = template:Clone()
+						pulse.Name = "Pulse"
+						pulse.RollOffMode = Enum.RollOffMode.InverseTapered
+						pulse.RollOffMinDistance = 6
+						pulse.RollOffMaxDistance = 70
+						pulse.Parent = key
+					end
+					pulse:Play()
+				end
+			end
+		end
+	end
+end)
+
 -- Random distant screams while you're in the maze
 task.spawn(function()
 	while true do
@@ -212,7 +239,7 @@ local danger = make("Frame", {
 local statusLabel = make("TextLabel", {
 	AnchorPoint = Vector2.new(0.5, 0),
 	Position = UDim2.new(0.5, 0, 0, 44),
-	Size = UDim2.fromOffset(420, 40),
+	Size = UDim2.fromOffset(700, 40),
 	BackgroundTransparency = 1,
 	Font = Enum.Font.Creepster,
 	TextSize = 34,
@@ -305,7 +332,8 @@ local function refreshStatus()
 		elseif myStatus == "Alive" then
 			statusLabel.Text = "Keys " .. keys .. "   " .. formatTime(t)
 		else
-			statusLabel.Text = "Round in progress   " .. formatTime(t)
+			-- Joined mid-round: the round's remaining time plus the gap before the next one
+			statusLabel.Text = "Round in progress   next round in " .. formatTime(t + Config.INTERMISSION + 5)
 		end
 	else
 		statusLabel.Text = ""
@@ -361,7 +389,7 @@ local function fetchPrice(name, id, infoType, button)
 		end)
 		if ok and info and info.PriceInRobux then
 			prices[name] = "  ·  R$ " .. info.PriceInRobux
-			if button.Text == (Config.ShopText[name] or name) then
+			if button and button.Text == (Config.ShopText[name] or name) then
 				button.Text = label(name)
 			end
 		end
@@ -392,21 +420,35 @@ if Config.Products.StunMonster > 0 then
 	fetchPrice("StunMonster", Config.Products.StunMonster, Enum.InfoType.Product, stunButton)
 end
 
+local deathDismissed = false -- player closed the caught screen to wait in the lobby
+
 local function refreshShop()
 	for name, button in pairs(passButtons) do
 		button.Visible = not player:GetAttribute(name)
 	end
 	local inRound = ReplicatedStorage:GetAttribute("State") == "Round"
 	if reviveButton then
-		-- Biggest impulse buy in the game: show it the moment you die
+		-- The caught screen has its own Revive button; this one is for after it's closed
 		local dead = inRound and player:GetAttribute("Status") == "Dead"
-		reviveButton.Visible = dead
+		reviveButton.Visible = dead and deathDismissed
 		reviveButton.Size = dead and UDim2.fromOffset(180, 54) or UDim2.fromOffset(180, 38)
 		reviveButton.Text = dead and label("Revive", "REVIVE NOW") or label("Revive")
 	end
 	if stunButton then
 		stunButton.Visible = inRound
 	end
+end
+
+-- When it's close, Freeze grows into the thing you can't miss
+local stunUrgent = false
+local function setStunUrgent(on)
+	if not stunButton or on == stunUrgent then
+		return
+	end
+	stunUrgent = on
+	stunButton.Size = on and UDim2.fromOffset(180, 54) or UDim2.fromOffset(180, 38)
+	stunButton.BackgroundColor3 = on and Color3.fromRGB(170, 20, 20) or Color3.fromRGB(40, 110, 180)
+	stunButton.Text = on and label("StunMonster", "FREEZE IT NOW") or label("StunMonster")
 end
 
 ---------------------------------------------------------------------------
@@ -521,6 +563,27 @@ end
 ---------------------------------------------------------------------------
 
 local scaring = false
+local refreshDeathUI -- defined below
+
+-- Red edges that fade toward the middle of the screen
+local function vignette(parent, color)
+	local edges = {
+		{ UDim2.fromScale(0, 0), UDim2.fromScale(0.3, 1), 0 },
+		{ UDim2.fromScale(0.7, 0), UDim2.fromScale(0.3, 1), 180 },
+		{ UDim2.fromScale(0, 0), UDim2.fromScale(1, 0.3), 90 },
+		{ UDim2.fromScale(0, 0.7), UDim2.fromScale(1, 0.3), -90 },
+	}
+	for _, e in ipairs(edges) do
+		local f = make("Frame", {
+			Position = e[1],
+			Size = e[2],
+			BackgroundColor3 = color,
+			BorderSizePixel = 0,
+			ZIndex = 51,
+		}, parent)
+		make("UIGradient", { Rotation = e[3], Transparency = NumberSequence.new(0.05, 1) }, f)
+	end
+end
 
 local function jumpscare()
 	if scaring then
@@ -532,90 +595,313 @@ local function jumpscare()
 	local layer = make("Frame", {
 		Size = UDim2.fromScale(1, 1),
 		BackgroundColor3 = Color3.new(0, 0, 0),
+		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ZIndex = 50,
 	}, gui)
+	vignette(layer, Color3.fromRGB(150, 0, 0))
 
-	-- A crude, pale, stretched face built from UI shapes (swap for an image asset later)
-	local face = make("Frame", {
-		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.5),
-		Size = UDim2.fromScale(0.45, 0.85),
-		BackgroundColor3 = Color3.fromRGB(205, 200, 190),
-		BorderSizePixel = 0,
-		ZIndex = 51,
-	}, layer)
-	make("UICorner", { CornerRadius = UDim.new(0.45, 0) }, face)
-	local scale = make("UIScale", { Scale = 0.2 }, face)
-
-	local function feature(pos, size, color, z, round)
-		local f = make("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = pos,
-			Size = size,
-			BackgroundColor3 = color,
-			BorderSizePixel = 0,
-			ZIndex = z,
-		}, face)
-		if round then
-			make("UICorner", { CornerRadius = UDim.new(1, 0) }, f)
-		end
-		return f
+	-- Snap the camera onto the creature's face
+	local monster = workspace:FindFirstChild("Monster")
+	local head = monster and monster:FindFirstChild("Head")
+	local root = monster and monster.PrimaryPart
+	local oldFov = camera.FieldOfView
+	local faceLight
+	if head and root then
+		camera.CameraType = Enum.CameraType.Scriptable
+		camera.FieldOfView = 55
+		-- Just enough red light to make out the face (only this player sees it)
+		faceLight = make("PointLight", { Color = Color3.fromRGB(255, 50, 30), Range = 8, Brightness = 3 }, head)
+	else
+		layer.BackgroundTransparency = 0
 	end
-	local black = Color3.new(0, 0, 0)
-	local red = Color3.fromRGB(255, 0, 0)
-	feature(UDim2.fromScale(0.3, 0.35), UDim2.fromScale(0.26, 0.17), black, 52, true)
-	feature(UDim2.fromScale(0.7, 0.33), UDim2.fromScale(0.26, 0.19), black, 52, true)
-	feature(UDim2.fromScale(0.3, 0.36), UDim2.fromScale(0.06, 0.04), red, 53, true)
-	feature(UDim2.fromScale(0.7, 0.34), UDim2.fromScale(0.06, 0.04), red, 53, true)
-	local mouth = feature(UDim2.fromScale(0.5, 0.72), UDim2.fromScale(0.5, 0.3), black, 52, true)
-	for i = 1, 7 do
-		make("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0),
-			Position = UDim2.fromScale(i / 8, 0),
-			Size = UDim2.fromScale(0.07, 0.3 + (i % 2) * 0.15),
-			Rotation = (i % 2 == 0) and 8 or -8,
-			BackgroundColor3 = Color3.fromRGB(230, 225, 200),
-			BorderSizePixel = 0,
-			ZIndex = 53,
-		}, mouth)
-	end
-
-	TweenService:Create(scale, TweenInfo.new(0.18, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1.5 }):Play()
 
 	local start = os.clock()
-	local conn
-	conn = RunService.RenderStepped:Connect(function()
-		local k = math.max(0, 1 - (os.clock() - start) / 1.1)
-		face.Position = UDim2.new(0.5, math.random(-25, 25) * k, 0.5, math.random(-25, 25) * k)
-		layer.BackgroundColor3 = (math.random() < 0.3) and Color3.fromRGB(90, 0, 0) or black
+	local conn = RunService.RenderStepped:Connect(function()
+		local t = os.clock() - start
+		if faceLight and head.Parent then
+			-- It lunges at you while the view shakes
+			local look = root.CFrame.LookVector
+			local eye = head.Position + look * (2.8 - math.min(t, 0.6) * 1.8)
+			local shake = Vector3.new(math.random() - 0.5, math.random() - 0.5, math.random() - 0.5) * 0.4
+			camera.CFrame = CFrame.lookAt(eye + shake, head.Position)
+		end
+		layer.BackgroundColor3 = (math.random() < 0.25) and Color3.fromRGB(90, 0, 0) or Color3.new(0, 0, 0)
 	end)
 
-	task.delay(1.2, function()
+	task.delay(0.6, function()
 		conn:Disconnect()
-		TweenService:Create(layer, TweenInfo.new(0.5), { BackgroundTransparency = 1 }):Play()
-		TweenService:Create(face, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
-		for _, d in ipairs(face:GetDescendants()) do
-			if d:IsA("Frame") then
-				TweenService:Create(d, TweenInfo.new(0.3), { BackgroundTransparency = 1 }):Play()
-			end
+		if faceLight then
+			faceLight:Destroy()
+			camera.CameraType = Enum.CameraType.Custom
+			camera.FieldOfView = oldFov
 		end
-		task.wait(0.6)
+		-- Cut to black, then fade out
+		layer.BackgroundColor3 = Color3.new(0, 0, 0)
+		layer.BackgroundTransparency = 0
+		task.wait(0.4)
+		TweenService:Create(layer, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+		for _, edge in ipairs(layer:GetChildren()) do
+			TweenService:Create(edge, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+		end
+		task.wait(0.7)
 		layer:Destroy()
 		scaring = false
+		refreshDeathUI()
 	end)
 end
 
 remotes:WaitForChild("Jumpscare").OnClientEvent:Connect(jumpscare)
 
 ---------------------------------------------------------------------------
+-- Caught screen and spectating
+---------------------------------------------------------------------------
+
+local function uiButton(parent, text, color, size, props)
+	local b = make("TextButton", {
+		Size = size,
+		BackgroundColor3 = color,
+		Font = Enum.Font.GothamBold,
+		TextSize = 18,
+		TextColor3 = Color3.new(1, 1, 1),
+		Text = text,
+		AutoButtonColor = true,
+		ZIndex = 32,
+	}, parent)
+	for k, v in pairs(props or {}) do
+		b[k] = v
+	end
+	make("UICorner", { CornerRadius = UDim.new(0, 10) }, b)
+	return b
+end
+
+local function promptRevive()
+	if Config.Products.Revive > 0 then
+		MarketplaceService:PromptProductPurchase(player, Config.Products.Revive)
+	end
+end
+
+local RED = Color3.fromRGB(170, 20, 20)
+local GREY = Color3.fromRGB(45, 45, 50)
+
+local deathScreen = make("Frame", {
+	Size = UDim2.fromScale(1, 1),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 0.3,
+	BorderSizePixel = 0,
+	Visible = false,
+	ZIndex = 30,
+}, gui)
+make("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.3),
+	Size = UDim2.fromOffset(700, 90),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.Creepster,
+	TextSize = 72,
+	TextColor3 = Color3.fromRGB(220, 20, 20),
+	TextStrokeTransparency = 0.5,
+	Text = "YOU WERE CAUGHT",
+	ZIndex = 31,
+}, deathScreen)
+local deathStats = make("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.42),
+	Size = UDim2.fromOffset(600, 30),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.Gotham,
+	TextSize = 22,
+	TextColor3 = Color3.fromRGB(210, 210, 210),
+	ZIndex = 31,
+}, deathScreen)
+local deathHint = make("TextLabel", {
+	AnchorPoint = Vector2.new(0.5, 0.5),
+	Position = UDim2.fromScale(0.5, 0.48),
+	Size = UDim2.fromOffset(600, 26),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 18,
+	TextColor3 = Color3.fromRGB(255, 120, 120),
+	ZIndex = 31,
+}, deathScreen)
+local deathRevive = uiButton(deathScreen, "REVIVE", RED, UDim2.fromOffset(300, 64), {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.fromScale(0.5, 0.54),
+	TextSize = 24,
+})
+deathRevive.Activated:Connect(promptRevive)
+local deathSpectate = uiButton(deathScreen, "SPECTATE", GREY, UDim2.fromOffset(145, 44), {
+	AnchorPoint = Vector2.new(1, 0),
+	Position = UDim2.new(0.5, -5, 0.54, 76),
+})
+local deathLobby = uiButton(deathScreen, "LOBBY", GREY, UDim2.fromOffset(145, 44), {
+	AnchorPoint = Vector2.new(0, 0),
+	Position = UDim2.new(0.5, 5, 0.54, 76),
+})
+
+local spectateBar = make("Frame", {
+	AnchorPoint = Vector2.new(0.5, 1),
+	Position = UDim2.new(0.5, 0, 1, -60),
+	Size = UDim2.fromOffset(560, 56),
+	BackgroundColor3 = Color3.new(0, 0, 0),
+	BackgroundTransparency = 0.4,
+	Visible = false,
+	ZIndex = 30,
+}, gui)
+make("UICorner", { CornerRadius = UDim.new(0, 10) }, spectateBar)
+make("UIListLayout", {
+	FillDirection = Enum.FillDirection.Horizontal,
+	HorizontalAlignment = Enum.HorizontalAlignment.Center,
+	VerticalAlignment = Enum.VerticalAlignment.Center,
+	Padding = UDim.new(0, 8),
+	SortOrder = Enum.SortOrder.LayoutOrder,
+}, spectateBar)
+local spectateName = make("TextLabel", {
+	Size = UDim2.fromOffset(210, 40),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 18,
+	TextColor3 = Color3.new(1, 1, 1),
+	TextTruncate = Enum.TextTruncate.AtEnd,
+	LayoutOrder = 1,
+	ZIndex = 31,
+}, spectateBar)
+local spectateNext = uiButton(spectateBar, "NEXT", GREY, UDim2.fromOffset(80, 40), { LayoutOrder = 2 })
+local spectateRevive = uiButton(spectateBar, "REVIVE", RED, UDim2.fromOffset(140, 40), { LayoutOrder = 3 })
+spectateRevive.Activated:Connect(promptRevive)
+local spectateBack = uiButton(spectateBar, "BACK", GREY, UDim2.fromOffset(80, 40), { LayoutOrder = 4 })
+
+-- For players who joined mid-round and are waiting in the lobby
+local watchButton = uiButton(gui, "SPECTATE", GREY, UDim2.fromOffset(180, 38), {
+	AnchorPoint = Vector2.new(0.5, 0),
+	Position = UDim2.new(0.5, 0, 0, 130),
+	Visible = false,
+	ZIndex = 6,
+})
+
+local spectating: Player? = nil
+
+local function aliveOthers()
+	local list = {}
+	for _, p in ipairs(Players:GetPlayers()) do
+		local hum = p.Character and p.Character:FindFirstChildOfClass("Humanoid")
+		if p ~= player and p:GetAttribute("Status") == "Alive" and hum and hum.Health > 0 then
+			table.insert(list, p)
+		end
+	end
+	return list
+end
+
+local function applyCamera()
+	local hum = spectating and spectating.Character and spectating.Character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		-- Third person behind the teammate you're watching
+		player.CameraMode = Enum.CameraMode.Classic
+		player.CameraMinZoomDistance = 8
+		camera.CameraSubject = hum
+	else
+		player.CameraMinZoomDistance = 0.5
+		player.CameraMode = Enum.CameraMode.LockFirstPerson
+		local own = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if own then
+			camera.CameraSubject = own
+		end
+	end
+end
+
+local function spectate(target: Player?)
+	spectating = target
+	applyCamera()
+	refreshDeathUI()
+end
+
+local function nextTarget()
+	local list = aliveOthers()
+	if #list == 0 then
+		return nil
+	end
+	local i = table.find(list, spectating) or 0
+	return list[i % #list + 1]
+end
+
+refreshDeathUI = function()
+	local inRound = ReplicatedStorage:GetAttribute("State") == "Round"
+	local myStatus = player:GetAttribute("Status")
+	local dead = inRound and myStatus == "Dead"
+
+	-- Stop watching when the round ends or you're back in; move on when your target falls
+	if spectating then
+		if not inRound or myStatus == "Alive" then
+			spectating = nil
+			applyCamera()
+		elseif spectating.Parent == nil or spectating:GetAttribute("Status") ~= "Alive" then
+			spectating = nextTarget()
+			applyCamera()
+		end
+	end
+
+	local others = #aliveOthers() > 0
+	deathScreen.Visible = dead and not scaring and not spectating and not deathDismissed
+	if deathScreen.Visible then
+		local keys = (ReplicatedStorage:GetAttribute("KeysFound") or 0) .. "/" .. (ReplicatedStorage:GetAttribute("KeysNeeded") or 0)
+		deathStats.Text = "Keys found  " .. keys .. "        Survived  " .. formatTime(player:GetAttribute("SurvivedFor") or 0)
+		local window = ReplicatedStorage:GetAttribute("ReviveWindow") or 0
+		if window > 0 then
+			deathHint.Text = "Revive in " .. window .. "s or the round ends"
+		elseif others then
+			deathHint.Text = "Your team is still in there."
+		else
+			deathHint.Text = ""
+		end
+		deathRevive.Visible = Config.Products.Revive > 0
+		deathRevive.Text = label("Revive", "REVIVE")
+		deathSpectate.Visible = others
+	end
+
+	spectateBar.Visible = spectating ~= nil
+	if spectating then
+		spectateName.Text = "Watching " .. spectating.DisplayName
+		spectateRevive.Visible = dead and Config.Products.Revive > 0
+		spectateRevive.Text = label("Revive", "REVIVE")
+	end
+	watchButton.Visible = inRound and myStatus == "Lobby" and not spectating and others
+end
+
+deathSpectate.Activated:Connect(function()
+	spectate(nextTarget())
+end)
+deathLobby.Activated:Connect(function()
+	deathDismissed = true
+	refreshDeathUI()
+	refreshShop()
+end)
+spectateNext.Activated:Connect(function()
+	spectate(nextTarget())
+end)
+spectateBack.Activated:Connect(function()
+	spectate(nil)
+end)
+watchButton.Activated:Connect(function()
+	spectate(nextTarget())
+end)
+
+-- Respawning in the lobby resets the camera to your own character, so put it back
+player.CharacterAdded:Connect(function()
+	task.wait()
+	applyCamera()
+end)
+
+---------------------------------------------------------------------------
 -- Per-frame: flashlight follow, sprint, monster proximity
 ---------------------------------------------------------------------------
 
 RunService:BindToRenderStep("HorrorEffects", Enum.RenderPriority.Camera.Value + 1, function(dt)
-	-- From the head, not the camera, so in third person the character doesn't shadow the beam
+	-- From the head, not the camera, so in third person the character doesn't shadow the beam.
+	-- Uses whoever the camera follows, so spectators light up what their teammate sees.
 	local look = camera.CFrame.LookVector
-	local head = player.Character and player.Character:FindFirstChild("Head")
+	local subject = camera.CameraSubject
+	local subjectChar = (subject and subject:IsA("Humanoid")) and subject.Parent or player.Character
+	local head = subjectChar and subjectChar:FindFirstChild("Head")
 	local origin = head and head.Position + look * 1.5 or camera.CFrame.Position
 	lightPart.CFrame = CFrame.lookAt(origin, origin + look)
 
@@ -646,6 +932,7 @@ RunService:BindToRenderStep("HorrorEffects", Enum.RenderPriority.Camera.Value + 
 		intensity = math.clamp(1 - d / 45, 0, 1)
 	end
 	danger.BackgroundTransparency = 1 - 0.35 * intensity
+	setStunUrgent(intensity > 0.5 and inMaze())
 
 	-- Heartbeat gets louder and faster as it closes in; whispers when it's very close
 	local heartbeat = sounds.Heartbeat
@@ -667,16 +954,22 @@ end)
 -- Keep HUD in sync
 ---------------------------------------------------------------------------
 
-for _, attr in ipairs({ "State", "TimeLeft", "KeysFound", "KeysNeeded" }) do
+for _, attr in ipairs({ "State", "TimeLeft", "KeysFound", "KeysNeeded", "ReviveWindow" }) do
 	ReplicatedStorage:GetAttributeChangedSignal(attr):Connect(function()
 		refreshStatus()
 		refreshShop()
+		refreshDeathUI()
 	end)
 end
-player.AttributeChanged:Connect(function()
+player.AttributeChanged:Connect(function(attr)
+	if attr == "Status" and player:GetAttribute("Status") == "Dead" then
+		deathDismissed = false -- a new death always shows the caught screen
+	end
 	refreshStatus()
 	refreshShop()
+	refreshDeathUI()
 	applyFlashlight()
 end)
 refreshStatus()
 refreshShop()
+refreshDeathUI()

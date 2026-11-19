@@ -1,13 +1,16 @@
 # THE HOLLOW: a Roblox horror game
 
-A round-based maze horror game. Players spawn in a lit lobby. Each round, a new pitch-black maze is generated and players drop into it. They have to find 5 glowing keys and reach the exit gate while something hunts them. If it catches you, you get a jumpscare.
+A round-based maze horror game. Players spawn in a lit lobby. Each round, a new dark maze is generated and players drop into it. They have to find 5 glowing keys and reach the exit gate while something hunts them. If it catches you, you get a jumpscare, then a chance to revive or watch your team.
 
 ## What's in it
 
 - **A new maze every round**, built with random generation and some extra loops so players can escape the monster
-- **The monster**: a tall black figure with glowing red eyes. It always knows roughly where you are and walks toward you. When it can see you, it runs.
+- **The monster**: a tall black figure with glowing red eyes. It starts on the far side of the maze and spends its first 40 seconds wandering slowly, so players can find a key before the first chase. After that it always knows roughly where you are and walks toward you. When it can see you, it runs.
+- **Keys you can hunt**: each key glows, is outlined through the dark, and pings louder as you get closer
 - **First-person camera, a flashlight (F), and sprinting (Shift) with a stamina bar.** Phones get on-screen buttons.
-- **Jumpscare**: a face fills the screen with shaking, red flashes and a scream
+- **Jumpscare**: the camera snaps onto the creature's face as it lunges, with shaking, a red vignette and a scream
+- **Caught screen**: "YOU WERE CAUGHT" with keys found and time survived, a Revive button, and spectating your teammates. When everyone is down there are 12 seconds to revive before the round ends, so solo players get the chance too.
+- **Late joiners** wait in the lit lobby, see when the next round starts, and can spectate
 - **Sound design**: drone, heartbeat, directional growls, whispers and distant screams
 - **Danger effects**: the screen turns red and shakes as the monster gets closer
 - **Leaderboard**: an "Escapes" count, saved between sessions
@@ -17,7 +20,7 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
 |---|---|---|---|
 | Super Flashlight | Game Pass (buy once) | 99 R$ | Brighter, wider, longer beam |
 | Infinite Stamina | Game Pass (buy once) | 149 R$ | Sprint forever |
-| Revive | Developer Product (buy again and again) | 25 R$ | Come back to life mid-round. The button pops up the moment you die. |
+| Revive | Developer Product (buy again and again) | 25 R$ | Come back to life where you fell, with 5 seconds before the monster can take you again. Offered on the caught screen. |
 | Freeze Monster | Developer Product (buy again and again) | 35 R$ | Freezes the monster for 10 seconds for everyone |
 
 ## 1. Open it in Roblox Studio
@@ -67,7 +70,7 @@ Heartbeat = { "rbxassetid://YOUR_ID", "rbxassetid://9082241193" },
 
 ## Tuning
 
-Every setting is in `Config`: round length, maze size, number of keys, monster speeds, fog, stamina and so on. If the game is too hard, lower `MONSTER_CHASE_SPEED`. If it's too easy, raise it or set `KEYS_TO_ESCAPE` to 7.
+Every setting is in `Config`: round length, maze size, number of keys, monster speeds, darkness, stamina and so on. If the game is too hard, lower `MONSTER_CHASE_SPEED`. If it's too easy, raise it or set `KEYS_TO_ESCAPE` to 7.
 
 ## Editing the code outside Studio
 

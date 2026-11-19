@@ -46,9 +46,10 @@ setShared("State", "Waiting")
 setShared("TimeLeft", 0)
 setShared("KeysFound", 0)
 setShared("KeysNeeded", Config.KEYS_TO_ESCAPE)
+setShared("ReviveWindow", 0)
 
 ---------------------------------------------------------------------------
--- Lighting: pitch dark, heavy fog
+-- Lighting: very dark, thick air
 ---------------------------------------------------------------------------
 
 for _, child in ipairs(Lighting:GetChildren()) do
@@ -59,15 +60,21 @@ end
 
 Lighting.ClockTime = 0
 Lighting.Brightness = 0
--- Dark, but walls and corridors stay readable as silhouettes without the flashlight
-Lighting.Ambient = Color3.fromRGB(38, 38, 48)
-Lighting.OutdoorAmbient = Color3.fromRGB(38, 38, 48)
+Lighting.Ambient = Config.AMBIENT
+Lighting.OutdoorAmbient = Config.AMBIENT
 Lighting.EnvironmentDiffuseScale = 0
 Lighting.EnvironmentSpecularScale = 0
 Lighting.GlobalShadows = true
-Lighting.FogColor = Color3.new(0, 0, 0)
-Lighting.FogStart = 0
-Lighting.FogEnd = Config.FOG_DISTANCE
+
+-- Atmosphere replaces fog: you can see what's near, the distance just fades to black
+local atmosphere = Instance.new("Atmosphere")
+atmosphere.Density = Config.ATMOSPHERE_DENSITY
+atmosphere.Offset = 0
+atmosphere.Color = Color3.fromRGB(18, 18, 22)
+atmosphere.Decay = Color3.fromRGB(8, 8, 10)
+atmosphere.Glare = 0
+atmosphere.Haze = 1.5
+atmosphere.Parent = Lighting
 
 local grade = Instance.new("ColorCorrectionEffect")
 grade.Saturation = -0.3
@@ -96,6 +103,7 @@ end
 ---------------------------------------------------------------------------
 
 local LOBBY_CENTER = Vector3.new(Config.MAZE_WIDTH * Config.CELL_SIZE / 2, 0, -90)
+local LOBBY_SPAWN = CFrame.new(LOBBY_CENTER + Vector3.new(0, 3, 0))
 
 local function buildLobby()
 	local lobby = Instance.new("Folder")
@@ -261,8 +269,8 @@ local function wallPart(parent, position, size)
 		Name = "Wall",
 		Size = size,
 		Position = position,
-		Material = Enum.Material.Concrete,
-		Color = Color3.fromRGB(55, 55, 60),
+		Material = Enum.Material.Brick,
+		Color = Color3.fromRGB(120, 118, 115),
 	}, parent)
 end
 
@@ -298,7 +306,7 @@ local function buildMaze()
 		Size = Vector3.new(W * CELL + WALL_T, 1, H * CELL + WALL_T),
 		Position = Vector3.new(W * CELL / 2, -0.5, H * CELL / 2),
 		Material = Enum.Material.Slate,
-		Color = Color3.fromRGB(35, 33, 33),
+		Color = Color3.fromRGB(60, 57, 55),
 	}, mazeFolder)
 
 	local yMid = Config.WALL_HEIGHT / 2
@@ -369,17 +377,25 @@ local function buildMaze()
 			local key = makePart({
 				Name = "Key",
 				Shape = Enum.PartType.Ball,
-				Size = Vector3.new(1.5, 1.5, 1.5),
+				Size = Vector3.new(2, 2, 2),
 				Position = cellCenter(x, y) + Vector3.new(0, 2.5, 0),
 				Material = Enum.Material.Neon,
 				Color = Color3.fromRGB(255, 200, 40),
 				CanCollide = false,
 			}, mazeFolder)
 			local glow = Instance.new("PointLight")
-			glow.Range = 10
-			glow.Brightness = 2
-			glow.Color = Color3.fromRGB(255, 200, 40)
+			glow.Range = 12
+			glow.Brightness = 2.5
+			glow.Color = Color3.fromRGB(255, 190, 70)
 			glow.Parent = key
+			-- Outline shows through the dark, but not through walls
+			local outline = Instance.new("Highlight")
+			outline.DepthMode = Enum.HighlightDepthMode.Occluded
+			outline.FillColor = Color3.fromRGB(255, 200, 60)
+			outline.FillTransparency = 0.6
+			outline.OutlineColor = Color3.fromRGB(255, 230, 140)
+			outline.OutlineTransparency = 0
+			outline.Parent = key
 			key.Touched:Connect(function(hit)
 				onKeyTouched(key, hit)
 			end)
@@ -416,6 +432,9 @@ local roundActive = false
 local status: { [Player]: string } = {} -- "Lobby" | "Alive" | "Dead" | "Escaped"
 local reviveTokens: { [Player]: number } = {}
 local pendingStuns = 0
+local roundStartedAt = 0
+local fellAt: { [Player]: Vector3 } = {} -- where a revived player comes back
+local protectedUntil: { [Player]: number } = {} -- the monster ignores freshly revived players
 
 local function setStatus(player, s)
 	status[player] = s
@@ -485,14 +504,24 @@ local function getAliveParts(player)
 	return nil
 end
 
-local function aliveCount()
+local function countStatus(wanted)
 	local n = 0
 	for _, s in pairs(status) do
-		if s == "Alive" then
+		if s == wanted then
 			n += 1
 		end
 	end
 	return n
+end
+
+local function isProtected(player)
+	return (protectedUntil[player] or 0) > os.clock()
+end
+
+-- A revived player gets a few seconds before the monster can take them again
+local function protectRevived(player)
+	protectedUntil[player] = os.clock() + Config.REVIVE_PROTECTION
+	notify(player, "You have " .. Config.REVIVE_PROTECTION .. " seconds. RUN.", Color3.fromRGB(120, 255, 120))
 end
 
 ---------------------------------------------------------------------------
@@ -533,9 +562,15 @@ local function onCharacterAdded(player, char)
 	char:WaitForChild("HumanoidRootPart")
 	hum.WalkSpeed = Config.WALK_SPEED
 
+	task.wait()
 	if roundActive and status[player] == "Alive" then
-		task.wait()
-		char:PivotTo(CFrame.new(cellCenter(1, 1) + Vector3.new(0, 3, 0)))
+		-- Round start puts you at the entrance; a revive puts you back where you fell
+		local at = fellAt[player]
+		fellAt[player] = nil
+		char:PivotTo(CFrame.new((at or cellCenter(1, 1)) + Vector3.new(0, 3, 0)))
+	else
+		-- Everyone else goes to the lit lobby, never to wherever the place's default spawn is
+		char:PivotTo(LOBBY_SPAWN)
 	end
 
 	hum.Died:Connect(function()
@@ -543,11 +578,17 @@ local function onCharacterAdded(player, char)
 			return
 		end
 		if roundActive and status[player] == "Alive" then
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				fellAt[player] = Vector3.new(hrp.Position.X, 0, hrp.Position.Z)
+			end
 			if (reviveTokens[player] or 0) > 0 then
-				-- Pre-bought revive: status stays Alive, they respawn back in the maze
+				-- Pre-bought revive: status stays Alive, they respawn where they fell
 				reviveTokens[player] -= 1
+				protectRevived(player)
 				notifyAll(player.DisplayName .. " used a revive!", Color3.fromRGB(120, 255, 120))
 			else
+				player:SetAttribute("SurvivedFor", math.floor(os.clock() - roundStartedAt))
 				setStatus(player, "Dead")
 				notifyAll(player.DisplayName .. " was taken...", Color3.fromRGB(255, 60, 60))
 			end
@@ -590,6 +631,8 @@ Players.PlayerRemoving:Connect(function(player)
 	status[player] = nil
 	reviveTokens[player] = nil
 	statsLoaded[player] = nil
+	fellAt[player] = nil
+	protectedUntil[player] = nil
 end)
 
 game:BindToClose(function()
@@ -610,6 +653,7 @@ type Monster = {
 	speed: number,
 	wakeAt: number,
 	stunnedUntil: number,
+	wanderGoal: Vector3?,
 	catching: { [Player]: boolean },
 }
 
@@ -674,7 +718,7 @@ end
 local function nearestTarget(from: Vector3)
 	local best, bestDist, bestPos = nil, math.huge, nil
 	for player, s in pairs(status) do
-		if s == "Alive" then
+		if s == "Alive" and not isProtected(player) then
 			local hrp = getAliveParts(player)
 			if hrp then
 				local d = (hrp.Position - from).Magnitude
@@ -697,34 +741,60 @@ local function hasLineOfSight(from: Vector3, to: Vector3)
 	return workspace:Raycast(from, to - from, params) == nil
 end
 
+local function computePath(from: Vector3, to: Vector3): { Vector3 }?
+	local path = PathfindingService:CreatePath({
+		AgentRadius = 3,
+		AgentHeight = 10,
+		AgentCanJump = false,
+		WaypointSpacing = 6,
+	})
+	local ok = pcall(function()
+		path:ComputeAsync(Vector3.new(from.X, 2, from.Z), to)
+	end)
+	if not ok or path.Status ~= Enum.PathStatus.Success then
+		return nil
+	end
+	local list = {}
+	for i, wp in ipairs(path:GetWaypoints()) do
+		if i > 1 then
+			table.insert(list, wp.Position)
+		end
+	end
+	return list
+end
+
 local function runMonsterBrain(m: Monster)
 	task.spawn(function()
 		while monster == m and roundActive do
 			local pos = m.root.Position
 			local target, dist, goal = nearestTarget(pos)
-			if target and goal then
-				local sees = dist < Config.MONSTER_SIGHT and hasLineOfSight(pos, goal)
-				m.speed = sees and Config.MONSTER_CHASE_SPEED or Config.MONSTER_HUNT_SPEED
+			-- Early on it searches: slow, wandering, and only notices players who get close
+			local searching = os.clock() < m.wakeAt + Config.MONSTER_SEARCH_TIME
+			local sightRange = searching and Config.MONSTER_SEARCH_SIGHT or Config.MONSTER_SIGHT
+			local sees = target ~= nil and dist < sightRange and hasLineOfSight(pos, goal)
 
-				local path = PathfindingService:CreatePath({
-					AgentRadius = 3,
-					AgentHeight = 10,
-					AgentCanJump = false,
-					WaypointSpacing = 6,
-				})
-				local ok = pcall(function()
-					path:ComputeAsync(Vector3.new(pos.X, 2, pos.Z), goal)
-				end)
+			if searching and not sees then
+				m.speed = Config.MONSTER_SEARCH_SPEED
+				if not m.wanderGoal or m.index > #m.waypoints then
+					m.wanderGoal = cellCenter(math.random(1, W), math.random(1, H)) + Vector3.new(0, 2, 0)
+					local list = computePath(pos, m.wanderGoal)
+					if monster ~= m then
+						break
+					end
+					if list then
+						m.waypoints, m.index = list, 1
+					else
+						m.wanderGoal = nil
+					end
+				end
+			elseif goal then
+				m.wanderGoal = nil
+				m.speed = (sees and not searching) and Config.MONSTER_CHASE_SPEED or Config.MONSTER_HUNT_SPEED
+				local list = computePath(pos, goal)
 				if monster ~= m then
 					break
 				end
-				if ok and path.Status == Enum.PathStatus.Success then
-					local list = {}
-					for i, wp in ipairs(path:GetWaypoints()) do
-						if i > 1 then
-							table.insert(list, wp.Position)
-						end
-					end
+				if list then
 					m.waypoints, m.index = list, 1
 				elseif sees then
 					-- No path but a clear view: lunge straight at them
@@ -779,7 +849,7 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 
 	for player, s in pairs(status) do
-		if s == "Alive" and not m.catching[player] then
+		if s == "Alive" and not m.catching[player] and not isProtected(player) then
 			local hrp, hum = getAliveParts(player)
 			if hrp and hum then
 				local flat = Vector3.new(hrp.Position.X - pos.X, 0, hrp.Position.Z - pos.Z)
@@ -866,6 +936,7 @@ end
 local function applyRevive(player)
 	if roundActive and status[player] == "Dead" then
 		setStatus(player, "Alive")
+		protectRevived(player)
 		notifyAll(player.DisplayName .. " came back from the dead!", Color3.fromRGB(120, 255, 120))
 		player:LoadCharacter()
 	else
@@ -909,6 +980,9 @@ local function startRound()
 	task.wait(1) -- let the navigation mesh catch up with the new walls
 
 	roundActive = true
+	roundStartedAt = os.clock()
+	table.clear(fellAt)
+	table.clear(protectedUntil)
 	setShared("State", "Round")
 	for _, player in ipairs(Players:GetPlayers()) do
 		setStatus(player, "Alive")
@@ -917,7 +991,8 @@ local function startRound()
 		end)
 	end
 
-	local m = buildMonster(cellCenter(W, 1))
+	-- Far side of the maze from the entrance at (1, 1)
+	local m = buildMonster(cellCenter(W, H - 1))
 	monster = m
 	runMonsterBrain(m)
 	if pendingStuns > 0 then
@@ -980,11 +1055,23 @@ while true do
 	if #Players:GetPlayers() >= Config.MIN_PLAYERS then
 		startRound()
 		local t = Config.ROUND_TIME
-		while t > 0 and aliveCount() > 0 do
+		local window = Config.REVIVE_WINDOW
+		while t > 0 do
+			if countStatus("Alive") > 0 then
+				window = Config.REVIVE_WINDOW
+				setShared("ReviveWindow", 0)
+			elseif countStatus("Dead") > 0 and window > 0 then
+				-- Everyone's down: a few seconds to buy a Revive before the round ends
+				setShared("ReviveWindow", window)
+				window -= 1
+			else
+				break
+			end
 			setShared("TimeLeft", t)
 			task.wait(1)
 			t -= 1
 		end
+		setShared("ReviveWindow", 0)
 		endRound(t <= 0)
 		task.wait(2)
 	end
