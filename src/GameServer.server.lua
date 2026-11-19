@@ -59,8 +59,9 @@ end
 
 Lighting.ClockTime = 0
 Lighting.Brightness = 0
-Lighting.Ambient = Color3.fromRGB(8, 8, 12)
-Lighting.OutdoorAmbient = Color3.fromRGB(8, 8, 12)
+-- Dark, but walls and corridors stay readable as silhouettes without the flashlight
+Lighting.Ambient = Color3.fromRGB(38, 38, 48)
+Lighting.OutdoorAmbient = Color3.fromRGB(38, 38, 48)
 Lighting.EnvironmentDiffuseScale = 0
 Lighting.EnvironmentSpecularScale = 0
 Lighting.GlobalShadows = true
@@ -69,8 +70,8 @@ Lighting.FogStart = 0
 Lighting.FogEnd = Config.FOG_DISTANCE
 
 local grade = Instance.new("ColorCorrectionEffect")
-grade.Saturation = -0.45
-grade.Contrast = 0.15
+grade.Saturation = -0.3
+grade.Contrast = 0.05
 grade.TintColor = Color3.fromRGB(215, 225, 255)
 grade.Parent = Lighting
 
@@ -397,8 +398,8 @@ local function buildMaze()
 			CanCollide = false,
 		}, mazeFolder)
 		local light = Instance.new("PointLight")
-		light.Range = 16
-		light.Brightness = 0.8
+		light.Range = 24
+		light.Brightness = 1.2
 		light.Color = Color3.fromRGB(255, 140, 80)
 		light.Parent = lamp
 		startFlicker(lamp, light, rng)

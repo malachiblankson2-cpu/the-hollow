@@ -410,7 +410,7 @@ local function refreshShop()
 end
 
 ---------------------------------------------------------------------------
--- Flashlight (local only, follows the camera)
+-- Flashlight (local only, held at the head, aimed where the camera looks)
 ---------------------------------------------------------------------------
 
 local lightPart = make("Part", {
@@ -432,9 +432,9 @@ local flashlightOn = true
 local function applyFlashlight()
 	local super = player:GetAttribute("SuperFlashlight")
 	spot.Enabled = flashlightOn
-	spot.Range = super and 60 or 32
-	spot.Angle = super and 70 or 45
-	spot.Brightness = super and 3 or 1.6
+	spot.Range = super and 60 or 45
+	spot.Angle = super and 75 or 60
+	spot.Brightness = super and 4 or 2.8
 end
 applyFlashlight()
 
@@ -613,7 +613,11 @@ remotes:WaitForChild("Jumpscare").OnClientEvent:Connect(jumpscare)
 ---------------------------------------------------------------------------
 
 RunService:BindToRenderStep("HorrorEffects", Enum.RenderPriority.Camera.Value + 1, function(dt)
-	lightPart.CFrame = camera.CFrame
+	-- From the head, not the camera, so in third person the character doesn't shadow the beam
+	local look = camera.CFrame.LookVector
+	local head = player.Character and player.Character:FindFirstChild("Head")
+	local origin = head and head.Position + look * 1.5 or camera.CFrame.Position
+	lightPart.CFrame = CFrame.lookAt(origin, origin + look)
 
 	-- Sprint
 	local char = player.Character

@@ -17,10 +17,10 @@ Config.MAZE_HEIGHT = 10
 Config.CELL_SIZE = 16           -- studs
 Config.WALL_HEIGHT = 14
 Config.EXTRA_OPENINGS = 0.12    -- chance to knock out extra walls so there are escape loops
-Config.FLICKER_LAMPS = 10
+Config.FLICKER_LAMPS = 18
 
 -- Atmosphere
-Config.FOG_DISTANCE = 70
+Config.FOG_DISTANCE = 90
 
 -- Player movement
 Config.WALK_SPEED = 14
