@@ -75,6 +75,15 @@ Config.Products = {
 
 Config.STUN_DURATION = 10
 
+-- Badges: create them on create.roblox.com (Engagement > Badges), then paste the IDs.
+-- Anything left at 0 is simply never awarded.
+Config.Badges = {
+	FirstEscape = 0, -- escape once
+	SoloEscape = 0,  -- escape in a round you started alone
+	TenEscapes = 0,  -- 10 escapes in total
+	Caught50 = 0,    -- caught 50 times
+}
+
 -- Shop labels (prices are set on the Roblox website, these are just display text)
 Config.ShopText = {
 	SuperFlashlight = "Super Flashlight",
@@ -94,6 +103,8 @@ local RunService = game:GetService("RunService")
 local PathfindingService = game:GetService("PathfindingService")
 local MarketplaceService = game:GetService("MarketplaceService")
 local DataStoreService = game:GetService("DataStoreService")
+local BadgeService = game:GetService("BadgeService")
+local AnalyticsService = game:GetService("AnalyticsService")
 
 local Config = require(ReplicatedStorage:WaitForChild("Config"))
 
@@ -190,6 +201,7 @@ end
 
 local LOBBY_CENTER = Vector3.new(Config.MAZE_WIDTH * Config.CELL_SIZE / 2, 0, -90)
 local LOBBY_SPAWN = CFrame.new(LOBBY_CENTER + Vector3.new(0, 3, 0))
+local escapeBoard: TextLabel? = nil -- the top escapes board in the lobby, filled in below
 
 local function buildLobby()
 	local lobby = Instance.new("Folder")
@@ -247,9 +259,14 @@ local function buildLobby()
 	spawn.Duration = 0
 	spawn.Size = Vector3.new(8, 1, 8)
 	spawn.Position = LOBBY_CENTER + Vector3.new(0, 0.1, 0)
-	spawn.Color = Color3.fromRGB(40, 30, 30)
+	spawn.Color = Color3.fromRGB(90, 22, 22)
 	spawn.Material = Enum.Material.Slate
 	spawn.Parent = lobby
+	local padGlow = Instance.new("PointLight")
+	padGlow.Color = Color3.fromRGB(255, 40, 30)
+	padGlow.Range = 10
+	padGlow.Brightness = 0.8
+	padGlow.Parent = spawn
 
 	-- Sign on the wall explaining the game
 	local sign = makePart({
@@ -274,6 +291,89 @@ local function buildLobby()
 	label.Parent = gui
 	-- The sign faces into the room
 	sign.CFrame = CFrame.lookAt(sign.Position, LOBBY_CENTER + Vector3.new(0, 8, 0))
+
+	-- Top escapes board on the opposite wall
+	local board = makePart({
+		Name = "TopEscapes",
+		Size = Vector3.new(16, 11, 0.5),
+		Position = LOBBY_CENTER + Vector3.new(0, 8, -size / 2 + 1),
+		Color = Color3.fromRGB(15, 10, 10),
+	}, lobby)
+	board.CFrame = CFrame.lookAt(board.Position, LOBBY_CENTER + Vector3.new(0, 8, 0))
+	local boardGui = Instance.new("SurfaceGui")
+	boardGui.Face = Enum.NormalId.Front
+	boardGui.Parent = board
+	local boardText = Instance.new("TextLabel")
+	boardText.Size = UDim2.fromScale(1, 1)
+	boardText.BackgroundTransparency = 1
+	boardText.TextScaled = true
+	boardText.RichText = true
+	boardText.Font = Enum.Font.GothamBold
+	boardText.TextColor3 = Color3.fromRGB(225, 225, 225)
+	boardText.Text = '<font face="Creepster" color="#dc1e1e">TOP ESCAPES</font>'
+	boardText.Parent = boardGui
+	escapeBoard = boardText
+
+	-- Shop kiosks along the east wall: walk up and press E to buy
+	local items = {}
+	for name, id in pairs(Config.GamePasses) do
+		if id > 0 then
+			table.insert(items, { name = name, id = id, pass = true })
+		end
+	end
+	for name, id in pairs(Config.Products) do
+		if id > 0 then
+			table.insert(items, { name = name, id = id, pass = false })
+		end
+	end
+	table.sort(items, function(a, b)
+		return a.name < b.name
+	end)
+	for i, item in ipairs(items) do
+		local title = Config.ShopText[item.name] or item.name
+		local stand = makePart({
+			Name = "Kiosk",
+			Size = Vector3.new(3, 4, 3),
+			Position = LOBBY_CENTER + Vector3.new(size / 2 - 4, 2, (i - (#items + 1) / 2) * 9),
+			Material = Enum.Material.Slate,
+			Color = Color3.fromRGB(25, 20, 20),
+		}, lobby)
+		makePart({
+			Name = "KioskGlow",
+			Size = Vector3.new(3.2, 0.3, 3.2),
+			Position = stand.Position + Vector3.new(0, 2.15, 0),
+			Material = Enum.Material.Neon,
+			Color = Color3.fromRGB(150, 15, 15),
+			CanCollide = false,
+		}, lobby)
+		local tag = Instance.new("BillboardGui")
+		tag.Size = UDim2.fromOffset(200, 40)
+		tag.StudsOffset = Vector3.new(0, 4.5, 0)
+		tag.MaxDistance = 45
+		tag.Parent = stand
+		local tagText = Instance.new("TextLabel")
+		tagText.Size = UDim2.fromScale(1, 1)
+		tagText.BackgroundTransparency = 1
+		tagText.Font = Enum.Font.GothamBold
+		tagText.TextSize = 20
+		tagText.TextColor3 = Color3.new(1, 1, 1)
+		tagText.TextStrokeTransparency = 0.3
+		tagText.Text = title
+		tagText.Parent = tag
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.ActionText = "Buy"
+		prompt.ObjectText = title
+		prompt.MaxActivationDistance = 8
+		prompt.RequiresLineOfSight = false
+		prompt.Parent = stand
+		prompt.Triggered:Connect(function(player)
+			if item.pass then
+				MarketplaceService:PromptGamePassPurchase(player, item.id)
+			else
+				MarketplaceService:PromptProductPurchase(player, item.id)
+			end
+		end)
+	end
 end
 
 buildLobby()
@@ -519,6 +619,8 @@ local status: { [Player]: string } = {} -- "Lobby" | "Alive" | "Dead" | "Escaped
 local reviveTokens: { [Player]: number } = {}
 local pendingStuns = 0
 local roundStartedAt = 0
+local roundPlayerCount = 0
+local caughtCount: { [Player]: number } = {}
 local fellAt: { [Player]: Vector3 } = {} -- where a revived player comes back
 local protectedUntil: { [Player]: number } = {} -- the monster ignores freshly revived players
 
@@ -527,9 +629,10 @@ local function setStatus(player, s)
 	player:SetAttribute("Status", s)
 end
 
-local store
+local store, escapeRanking
 pcall(function()
 	store = DataStoreService:GetDataStore("HollowStats_v1")
+	escapeRanking = DataStoreService:GetOrderedDataStore("HollowEscapes_v1")
 end)
 
 -- Only players whose saved data loaded get saved, so a failed load never overwrites
@@ -540,8 +643,10 @@ local function loadStats(player, escapes)
 	if not store then
 		return
 	end
-	local ok, value, revives = pcall(function()
-		return store:GetAsync("escapes_" .. player.UserId), store:GetAsync("revives_" .. player.UserId)
+	local ok, value, revives, caught = pcall(function()
+		return store:GetAsync("escapes_" .. player.UserId),
+			store:GetAsync("revives_" .. player.UserId),
+			store:GetAsync("caught_" .. player.UserId)
 	end)
 	if not ok or not player.Parent then
 		return
@@ -552,6 +657,9 @@ local function loadStats(player, escapes)
 	-- Revives are paid for, so unused ones carry over between sessions
 	if typeof(revives) == "number" then
 		reviveTokens[player] = (reviveTokens[player] or 0) + revives
+	end
+	if typeof(caught) == "number" then
+		caughtCount[player] = (caughtCount[player] or 0) + caught
 	end
 	statsLoaded[player] = true
 end
@@ -566,6 +674,31 @@ local function saveStats(player)
 	pcall(function()
 		store:SetAsync("escapes_" .. player.UserId, escapes.Value)
 		store:SetAsync("revives_" .. player.UserId, revives)
+		store:SetAsync("caught_" .. player.UserId, caughtCount[player] or 0)
+		if escapeRanking and escapes.Value > 0 then
+			escapeRanking:SetAsync(tostring(player.UserId), escapes.Value)
+		end
+	end)
+end
+
+local function awardBadge(player, name)
+	local id = Config.Badges[name]
+	if not id or id <= 0 then
+		return
+	end
+	task.spawn(function()
+		pcall(function()
+			if not BadgeService:UserHasBadgeAsync(player.UserId, id) then
+				BadgeService:AwardBadge(player.UserId, id)
+			end
+		end)
+	end)
+end
+
+-- Custom events show up in the Creator Dashboard under Analytics
+local function logEvent(player, name, value)
+	pcall(function()
+		AnalyticsService:LogCustomEvent(player, name, value or 1)
 	end)
 end
 
@@ -573,9 +706,54 @@ local function addEscape(player)
 	local stats = player:FindFirstChild("leaderstats")
 	if stats then
 		stats.Escapes.Value += 1
+		awardBadge(player, "FirstEscape")
+		if stats.Escapes.Value >= 10 then
+			awardBadge(player, "TenEscapes")
+		end
+		if roundPlayerCount == 1 then
+			awardBadge(player, "SoloEscape")
+		end
 		task.spawn(saveStats, player)
 	end
 end
+
+-- Top escapes board in the lobby
+local nameCache: { [number]: string } = {}
+local function refreshEscapeBoard()
+	if not escapeRanking or not escapeBoard then
+		return
+	end
+	local ok, page = pcall(function()
+		return escapeRanking:GetSortedAsync(false, 10):GetCurrentPage()
+	end)
+	if not ok then
+		return
+	end
+	local lines = { '<font face="Creepster" color="#dc1e1e">TOP ESCAPES</font>' }
+	for i, entry in ipairs(page) do
+		local id = tonumber(entry.key)
+		local name = id and nameCache[id]
+		if id and not name then
+			local okName, result = pcall(function()
+				return Players:GetNameFromUserIdAsync(id)
+			end)
+			name = okName and result or "?"
+			nameCache[id] = name
+		end
+		table.insert(lines, i .. ".  " .. (name or "?") .. "   " .. entry.value)
+	end
+	if #page == 0 then
+		table.insert(lines, "Nobody has escaped yet.")
+	end
+	escapeBoard.Text = table.concat(lines, "\n")
+end
+
+task.spawn(function()
+	while true do
+		refreshEscapeBoard()
+		task.wait(60)
+	end
+end)
 
 local function getAliveParts(player)
 	local char = player.Character
@@ -719,6 +897,7 @@ Players.PlayerRemoving:Connect(function(player)
 	statsLoaded[player] = nil
 	fellAt[player] = nil
 	protectedUntil[player] = nil
+	caughtCount[player] = nil
 end)
 
 game:BindToClose(function()
@@ -894,6 +1073,11 @@ end
 
 local function catchPlayer(m: Monster, player: Player, hum: Humanoid)
 	m.catching[player] = true
+	caughtCount[player] = (caughtCount[player] or 0) + 1
+	if caughtCount[player] >= 50 then
+		awardBadge(player, "Caught50")
+	end
+	logEvent(player, "Caught", math.floor(os.clock() - roundStartedAt))
 	hum.WalkSpeed = 0
 	jumpscareEvent:FireClient(player)
 	task.delay(0.7, function()
@@ -966,6 +1150,7 @@ onKeyTouched = function(key, hit)
 	end
 	key:Destroy()
 	keysFound += 1
+	logEvent(player, "KeyFound", keysFound)
 	setShared("KeysFound", keysFound)
 	notifyAll(
 		player.DisplayName .. " found a key (" .. keysFound .. "/" .. Config.KEYS_TO_ESCAPE .. ")",
@@ -998,6 +1183,7 @@ onExitTouched = function(hit)
 	end
 	setStatus(player, "Escaped")
 	addEscape(player)
+	logEvent(player, "Escaped", math.floor(os.clock() - roundStartedAt))
 	notifyAll(player.DisplayName .. " ESCAPED!", Color3.fromRGB(0, 255, 120))
 	player:LoadCharacter()
 end
@@ -1007,6 +1193,7 @@ end
 ---------------------------------------------------------------------------
 
 local function applyStun(byPlayer)
+	logEvent(byPlayer, "FreezeBought")
 	if roundActive and monster then
 		monster.stunnedUntil = os.clock() + Config.STUN_DURATION
 		notifyAll(
@@ -1020,6 +1207,7 @@ local function applyStun(byPlayer)
 end
 
 local function applyRevive(player)
+	logEvent(player, "ReviveBought")
 	if roundActive and status[player] == "Dead" then
 		setStatus(player, "Alive")
 		protectRevived(player)
@@ -1067,11 +1255,13 @@ local function startRound()
 
 	roundActive = true
 	roundStartedAt = os.clock()
+	roundPlayerCount = #Players:GetPlayers()
 	table.clear(fellAt)
 	table.clear(protectedUntil)
 	setShared("State", "Round")
 	for _, player in ipairs(Players:GetPlayers()) do
 		setStatus(player, "Alive")
+		logEvent(player, "RoundStarted", roundPlayerCount)
 		task.spawn(function()
 			player:LoadCharacter()
 		end)
@@ -1453,7 +1643,8 @@ make("TextLabel", {
 	Font = Enum.Font.Gotham,
 	TextSize = 14,
 	TextColor3 = Color3.fromRGB(150, 150, 150),
-	Text = UserInputService.TouchEnabled and "" or "SHIFT run   F flashlight",
+	Text = UserInputService.TouchEnabled and ""
+		or (UserInputService.GamepadEnabled and "R2 run   X flashlight" or "SHIFT run   F flashlight"),
 	ZIndex = 5,
 }, gui)
 
@@ -1634,10 +1825,24 @@ local spot = make("SpotLight", {
 	Color = Color3.fromRGB(255, 244, 220),
 }, lightPart)
 
+-- Shows whether the torch is on, left of the stamina bar
+local torchLabel = make("TextLabel", {
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(0.5, -122, 1, -28),
+	Size = UDim2.fromOffset(100, 20),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 14,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	ZIndex = 5,
+}, gui)
+
 local flashlightOn = true
 local function applyFlashlight()
 	local super = player:GetAttribute("SuperFlashlight")
 	spot.Enabled = flashlightOn
+	torchLabel.Text = flashlightOn and "TORCH ON" or "TORCH OFF"
+	torchLabel.TextColor3 = flashlightOn and Color3.fromRGB(255, 225, 150) or Color3.fromRGB(90, 90, 90)
 	spot.Range = super and 60 or 45
 	spot.Angle = super and 75 or 60
 	spot.Brightness = super and 4 or 2.8
@@ -1665,14 +1870,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonR2 then
 		wantsSprint = true
-	elseif input.KeyCode == Enum.KeyCode.F then
+	elseif input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonX then
 		toggleFlashlight()
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonR2 then
 		wantsSprint = false
 	end
 end)

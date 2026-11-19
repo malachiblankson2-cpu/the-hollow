@@ -75,6 +75,15 @@ Config.Products = {
 
 Config.STUN_DURATION = 10
 
+-- Badges: create them on create.roblox.com (Engagement > Badges), then paste the IDs.
+-- Anything left at 0 is simply never awarded.
+Config.Badges = {
+	FirstEscape = 0, -- escape once
+	SoloEscape = 0,  -- escape in a round you started alone
+	TenEscapes = 0,  -- 10 escapes in total
+	Caught50 = 0,    -- caught 50 times
+}
+
 -- Shop labels (prices are set on the Roblox website, these are just display text)
 Config.ShopText = {
 	SuperFlashlight = "Super Flashlight",

@@ -7,13 +7,16 @@ A round-based maze horror game. Players spawn in a lit lobby. Each round, a new 
 - **A new maze every round**, built with random generation and some extra loops so players can escape the monster
 - **The monster**: a tall black figure with glowing red eyes. It starts on the far side of the maze and spends its first 40 seconds wandering slowly, so players can find a key before the first chase. After that it always knows roughly where you are and walks toward you. When it can see you, it runs.
 - **Keys you can hunt**: each key glows, is outlined through the dark, and pings louder as you get closer
-- **First-person camera, a flashlight (F), and sprinting (Shift) with a stamina bar.** Phones get on-screen buttons.
+- **First-person camera, a flashlight (F), and sprinting (Shift) with a stamina bar** that turns red when it's low, plus a TORCH ON/OFF indicator. Phones get on-screen buttons, and controllers use R2 to run and X for the flashlight.
 - **Jumpscare**: the camera snaps onto the creature's face as it lunges, with shaking, a red vignette and a scream
 - **Caught screen**: "YOU WERE CAUGHT" with keys found and time survived, a Revive button, and spectating your teammates. When everyone is down there are 12 seconds to revive before the round ends, so solo players get the chance too.
 - **Late joiners** wait in the lit lobby, see when the next round starts, and can spectate
 - **Sound design**: drone, heartbeat, directional growls, whispers and distant screams
 - **Danger effects**: the screen turns red and shakes as the monster gets closer
+- **Lobby**: a rules sign, a top-10 escapes board, and a shop kiosk for each item (walk up and press E)
 - **Leaderboard**: an "Escapes" count, saved between sessions
+- **Badges**: First Escape, Solo Escape, 10 Escapes and Caught 50 Times (once you add their IDs)
+- **Analytics events**: RoundStarted, KeyFound, Caught, Escaped, ReviveBought and FreezeBought, shown under Analytics on the Creator Dashboard
 - **Shop**, with 4 ways to charge players:
 
 | Item | Type | Suggested price | What it does |
@@ -51,7 +54,16 @@ The shop buttons show each item's real price (for example `Revive · R$ 25`), ta
 
 **How the money works:** players pay in Robux. You keep about 70% of a sale, minus a small fee. To turn Robux into real money (DevEx), you need to be 13 or older and have a verified email. You also need at least 30,000 earned Robux, and your account has to be in good standing.
 
-## 4. Sound
+## 4. Badges
+
+1. On create.roblox.com, open your experience and go to **Engagement > Badges**. Create four badges: First Escape, Solo Escape, 10 Escapes and Caught 50 Times.
+2. Copy each badge's ID into `Config.Badges`:
+   ```lua
+   Config.Badges = { FirstEscape = 111, SoloEscape = 222, TenEscapes = 333, Caught50 = 444 }
+   ```
+3. Publish again. Badges left at `0` are never awarded.
+
+## 5. Sound
 
 The game already includes a full horror soundscape:
 

@@ -289,7 +289,8 @@ make("TextLabel", {
 	Font = Enum.Font.Gotham,
 	TextSize = 14,
 	TextColor3 = Color3.fromRGB(150, 150, 150),
-	Text = UserInputService.TouchEnabled and "" or "SHIFT run   F flashlight",
+	Text = UserInputService.TouchEnabled and ""
+		or (UserInputService.GamepadEnabled and "R2 run   X flashlight" or "SHIFT run   F flashlight"),
 	ZIndex = 5,
 }, gui)
 
@@ -470,10 +471,24 @@ local spot = make("SpotLight", {
 	Color = Color3.fromRGB(255, 244, 220),
 }, lightPart)
 
+-- Shows whether the torch is on, left of the stamina bar
+local torchLabel = make("TextLabel", {
+	AnchorPoint = Vector2.new(1, 0.5),
+	Position = UDim2.new(0.5, -122, 1, -28),
+	Size = UDim2.fromOffset(100, 20),
+	BackgroundTransparency = 1,
+	Font = Enum.Font.GothamBold,
+	TextSize = 14,
+	TextXAlignment = Enum.TextXAlignment.Right,
+	ZIndex = 5,
+}, gui)
+
 local flashlightOn = true
 local function applyFlashlight()
 	local super = player:GetAttribute("SuperFlashlight")
 	spot.Enabled = flashlightOn
+	torchLabel.Text = flashlightOn and "TORCH ON" or "TORCH OFF"
+	torchLabel.TextColor3 = flashlightOn and Color3.fromRGB(255, 225, 150) or Color3.fromRGB(90, 90, 90)
 	spot.Range = super and 60 or 45
 	spot.Angle = super and 75 or 60
 	spot.Brightness = super and 4 or 2.8
@@ -501,14 +516,14 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonR2 then
 		wantsSprint = true
-	elseif input.KeyCode == Enum.KeyCode.F then
+	elseif input.KeyCode == Enum.KeyCode.F or input.KeyCode == Enum.KeyCode.ButtonX then
 		toggleFlashlight()
 	end
 end)
 UserInputService.InputEnded:Connect(function(input)
-	if input.KeyCode == Enum.KeyCode.LeftShift then
+	if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonR2 then
 		wantsSprint = false
 	end
 end)
